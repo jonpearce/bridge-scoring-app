@@ -365,17 +365,14 @@ function renderDetailSheet() {
       </div>
       <div class="muted" style="margin-bottom:12px">Dealer ${v.dealer} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length === 0 ? '<div class="card">No results yet on this board.</div>' : `
-      <table class="btable">
-        <tr><th>Table</th><th>Contract</th><th>Declarer</th><th>Score</th><th>MP</th></tr>
-        ${rows.sort((a, b) => b.points - a.points).map((r) => `
-          <tr class="${r.table_num === state.myTable ? 'highlight' : ''}" style="${r.table_num === state.myTable ? 'background:var(--paper-2)' : ''}">
-            <td>T${r.table_num}</td>
-            <td>${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</td>
-            <td>${r.declarer || '—'}</td>
-            <td>${fmtScore(r.nsScore)}</td>
-            <td class="mp">${r.points}</td>
-          </tr>`).join('')}
-      </table>`}
+      ${rows.sort((a, b) => b.points - a.points).map((r) => `
+        <div class="board-line ${r.table_num === state.myTable ? 'mine' : ''}">
+          <span class="t">T${r.table_num}</span>
+          <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${r.declarer}` : ''}</span>
+          <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
+          <span class="sc ${r.nsScore > 0 ? 'plus' : r.nsScore < 0 ? 'minus' : ''}">${fmtScore(r.nsScore)}</span>
+          <span class="mp ${r.points === sb.top ? 'hi' : ''}">${r.points} MP</span>
+        </div>`).join('')}`}
     </div></div>`;
 }
 
@@ -504,33 +501,19 @@ function renderRoom() {
       </button>`;
   }).join('');
 
-  const doneCount = state.results.filter((r) => r.table_num === state.myTable).length;
   return `
     <div class="screen">
       <div class="topbar">
         <button class="back" data-action="go_home">‹</button>
         <div style="flex:1">
           <div style="font-weight:800;font-size:1.1rem">${esc(sess.title || 'Session')}</div>
-          <div class="small muted">Room <b>${esc(sess.code)}</b> · ${doneCount} of ${sess.num_boards} entered</div>
         </div>
       </div>
 
-      <div class="card flush" style="display:flex;align-items:center;justify-content:space-between;padding:14px 16px;margin-bottom:16px">
-        <div>
-          <div class="small muted">This phone is at</div>
-          <div style="font-weight:800;font-size:1.4rem">Table ${state.myTable}</div>
-        </div>
-        <button class="btn small ghost" data-action="open_tables">Change table</button>
+      <div class="card flush" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin-bottom:16px">
+        <div class="small muted" style="font-weight:800;font-size:1.15rem;white-space:nowrap">Table ${state.myTable}</div>
+        <button class="btn small ghost" data-action="open_tables" style="padding:5px 10px;font-size:0.8rem;min-height:0">Change table</button>
       </div>
-
-      ${state.myTable && doneCount < sess.num_boards ? `
-        <div class="board-hero">
-          <div>
-            <div class="bn">Board ${nextBoardFor(state.myTable, byBoard)}</div>
-            <div class="sub">Tap to enter</div>
-          </div>
-          <button class="btn" style="width:auto;min-height:52px" data-action="open_entry_next">Enter result</button>
-        </div>` : state.myTable ? `<div class="card"><b>All boards entered. </b><span class="small muted">Review below or check the results.</span></div>` : ''}
 
       <button class="btn soft grow" style="margin-bottom:16px" data-action="go_standings">Live results &amp; standings</button>
 
@@ -610,7 +593,7 @@ function renderEntry() {
       <div class="entry-block" style="${e.pass ? 'opacity:0.38;pointer-events:none' : ''}">
         <div class="label" style="margin-top:0">Contract level</div>
         <div class="chips" style="grid-auto-flow:column;grid-auto-columns:1fr">${levels}</div>
-        <div class="label">Strain</div>
+        <div class="label">Suit</div>
         <div class="chips strains">${strainBtns}</div>
         <div class="label">Doubled?</div>
         <div class="chips">${doubleBtns}</div>
@@ -676,17 +659,14 @@ function renderStandings() {
     const rows = info ? info.rows.slice().sort((a, b) => b.points - a.points) : [];
     boardsBody = `
       <div class="small muted" style="margin:-6px 0 10px">Dealer ${v.dealer} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
-      ${rows.length ? `<table class="btable">
-        <tr><th>Table</th><th>Contract</th><th>Tricks</th><th>Score</th><th>MP</th></tr>
-        ${rows.map((r) => `
-          <tr>
-            <td>T${r.table_num}</td>
-            <td>${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</td>
-            <td>${r.contract_level == null ? '—' : `${r.tricks}/13`}</td>
-            <td>${fmtScore(r.nsScore)}</td>
-            <td class="mp total ${r.points === info.top ? 'hi' : ''}">${r.points}</td>
-          </tr>`).join('')}
-      </table>` : '<div class="card">No results on this board yet.</div>'}`;
+      ${rows.length ? rows.map((r) => `
+        <div class="board-line ${r.table_num === state.myTable ? 'mine' : ''}">
+          <span class="t">T${r.table_num}</span>
+          <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</span>
+          <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
+          <span class="sc ${r.nsScore > 0 ? 'plus' : r.nsScore < 0 ? 'minus' : ''}">${fmtScore(r.nsScore)}</span>
+          <span class="mp ${r.points === info.top ? 'hi' : ''}">${r.points} MP</span>
+        </div>`).join('') : '<div class="card">No results on this board yet.</div>'}`;
   }
 
   return `

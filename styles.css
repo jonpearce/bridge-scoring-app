@@ -332,6 +332,22 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing:
 .btable .mp { font-weight: 800; }
 .btable .total.hi { background: var(--gold); color: #201a0c; border-radius: 10px; font-weight: 800; }
 
+.board-line {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--line);
+  border-radius: 12px; margin-bottom: 8px; font-size: 0.98rem;
+  background: var(--paper);
+}
+.board-line.mine { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.board-line .t { font-weight: 800; font-family: var(--font-display); min-width: 30px; }
+.board-line .ct { flex: 1; font-weight: 700; }
+.board-line .tk { color: var(--ink-soft); }
+.board-line .sc { font-weight: 800; font-family: var(--font-display); }
+.board-line .sc.plus { color: var(--green); }
+.board-line .sc.minus { color: var(--danger); }
+.board-line .mp { font-size: 0.8rem; color: var(--ink-soft); min-width: 44px; text-align: right; }
+.board-line .mp.hi { color: #201a0c; background: var(--gold); border-radius: 8px; padding: 2px 6px; font-weight: 800; }
+
 /* ---------- Setup ---------- */
 .pair-grid { display: grid; gap: 10px; }
 .pair-cell { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

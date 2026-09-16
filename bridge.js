@@ -93,13 +93,15 @@ export function displayContract(c) {
 // ---------- Matchpoint scoring ----------
 
 /**
- * rows: results on ONE board, each with table_num and the raw fields needed
- *       by makeScore.
+ * rows: results on ONE board. Each row is one pair's entry and carries
+ *       `side` ('NS' | 'EW') plus the raw fields needed by makeScore.
  * boardV: { ns, ew } vulnerability state of that board.
  * Returns { rows: [scored], top } where each scored row adds:
- *   nsScore, points (N/S matchpoints), ewPoints (E/W matchpoints — each
- *   pair's score is the negation of the declaring side's because N/S and E/W
- *   are scored separately on the same board).
+ *   nsScore   raw N/S score of the contract
+ *   ownScore  the score from that pair's own perspective (NS positive)
+ *   points    matchpoints won by that pair on this board
+ * Every result on the board is compared: an NS pair beats lower N/S scores,
+ * an E/W pair beats higher N/S scores (its own score is the negative).
  */
 export function scoreBoard(rows, boardV) {
   const withScore = rows.map((r) => ({
@@ -107,28 +109,17 @@ export function scoreBoard(rows, boardV) {
     nsScore: makeScore(r.contract_level, r.strain, r.doubled, r.tricks, r.declarer, boardV),
   }));
 
-  const matchpoints = (get) => {
-    const byTable = new Map();
-    for (const r of withScore) {
-      let wins = 0, ties = 0;
-      for (const o of withScore) {
-        if (o.table_num === r.table_num) continue;
-        if (get(r) > get(o)) wins++;
-        else if (get(r) === get(o)) ties++;
-      }
-      byTable.set(r.table_num, { wins, ties, points: 2 * wins + ties });
+  const scored = withScore.map((r) => {
+    let wins = 0, ties = 0;
+    for (const o of withScore) {
+      if (o === r) continue;
+      const beats = r.side === 'EW' ? r.nsScore < o.nsScore : r.nsScore > o.nsScore;
+      if (beats) wins++;
+      else if (r.nsScore === o.nsScore) ties++;
     }
-    return byTable;
-  };
-
-  const nsMP = matchpoints((r) => r.nsScore);
-  const ewMP = matchpoints((r) => -r.nsScore);
-
-  const scored = withScore.map((r) => ({
-    ...r,
-    ...nsMP.get(r.table_num),
-    ewPoints: ewMP.get(r.table_num).points,
-  }));
+    const ownScore = r.side === 'EW' ? -r.nsScore : r.nsScore;
+    return { ...r, ownScore, wins, ties, points: 2 * wins + ties };
+  });
 
   return { rows: scored, top: (withScore.length > 0 ? withScore.length - 1 : 0) * 2 };
 }
@@ -137,27 +128,22 @@ export function scoreBoard(rows, boardV) {
 export const pct = (points, maxPoints) =>
   maxPoints ? Math.round((points / maxPoints) * 1000) / 10 : 0;
 
-// Standings aggregated over every scored board. Pair identity is the free
-// text name recorded for that table's NS or EW seat; same name at different
-// tables is merged (handles manual movement). N/S and E/W pairs are scored
-// from their own perspectives on each board.
-export function standings(byBoard, allResults) {
+// Standings aggregated over every scored board. Pair identity is the name each
+// pair entered on its own phone; a pair's matchpoints and raw score come from
+// its own perspective on every board it played.
+export function standings(byBoard) {
   const acc = new Map();
-  allResults.forEach((r) => {
-    const label = r.side === 'NS' ? r.ns_pair : r.ew_pair;
-    if (!label) return;
-    const sb = byBoard[r.board_num];
-    const mine = sb && sb.rows.find((x) => x.table_num === r.table_num);
-    if (!mine) return;
-    const pts = r.side === 'EW' ? mine.ewPoints : mine.points;
-    const score = r.side === 'EW' ? -mine.nsScore : mine.nsScore;
-    const cur = acc.get(label) || { points: 0, max: 0, played: 0, score: 0 };
-    cur.points += pts;
-    cur.max += sb.top;
-    cur.score += score;
-    cur.played += 1;
-    acc.set(label, cur);
-  });
+  for (const sb of Object.values(byBoard)) {
+    for (const r of sb.rows) {
+      if (!r.pair) continue;
+      const cur = acc.get(r.pair) || { points: 0, max: 0, played: 0, score: 0 };
+      cur.points += r.points;
+      cur.max += sb.top;
+      cur.score += r.ownScore;
+      cur.played += 1;
+      acc.set(r.pair, cur);
+    }
+  }
   return [...acc.entries()]
     .map(([label, s]) => ({ label, ...s, pct: pct(s.points, s.max) }))
     .sort((a, b) => b.points - a.points || b.pct - a.pct);

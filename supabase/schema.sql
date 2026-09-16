@@ -10,7 +10,6 @@ create table if not exists public.sessions (
   id          uuid primary key default gen_random_uuid(),
   code        text not null unique,               -- 6-char room code used to join
   title       text,
-  num_tables  int  not null default 6,
   num_boards  int  not null default 24,
   created_at  timestamptz not null default now()
 );
@@ -25,21 +24,13 @@ create table if not exists public.boards (
   primary key (session_id, board_num)
 );
 
--- ---------- Table identities (which pair sits N/S and E/W per table) ----------
-create table if not exists public.session_pairs (
-  session_id text not null references public.sessions(code) on delete cascade,
-  table_num  int  not null,
-  ns_pair    text not null,          -- free text, e.g. "Pair 3" or "Mary & Jon"
-  ew_pair    text not null,
-  primary key (session_id, table_num)
-);
-
--- ---------- Results (one row per board played at a table) ----------
+-- ---------- Results (one row per board played by a pair) ----------
 create table if not exists public.results (
   id           uuid primary key default gen_random_uuid(),
   session_id   text not null references public.sessions(code) on delete cascade,
   board_num    int  not null,
-  table_num    int  not null,
+  pair         text not null,        -- pair name entered on the phone, e.g. "Jon & Mary"
+  side         text not null,        -- 'NS' or 'EW' — the side this pair sat
   contract_level int null,           -- 1..7, null = passed out
   strain       text null,            -- S,H,D,C,NT
   doubled      text not null default 'No',  -- No, X, XX
@@ -49,11 +40,10 @@ create table if not exists public.results (
   score        int not null default 0,   -- N/S raw score (computed on client)
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
-  unique (session_id, board_num, table_num)
+  unique (session_id, board_num, pair)
 );
 
 create index if not exists results_session_idx on public.results (session_id, board_num);
-create index if not exists pairs_session_idx  on public.session_pairs (session_id);
 
 -- Keep updated_at fresh
 create or replace function public.set_updated_at()
@@ -72,7 +62,6 @@ create trigger results_updated_at
 -- Publish live changes for these tables so every phone updates instantly.
 alter publication supabase_realtime add table public.sessions;
 alter publication supabase_realtime add table public.boards;
-alter publication supabase_realtime add table public.session_pairs;
 alter publication supabase_realtime add table public.results;
 
 -- ---------- Row Level Security ----------
@@ -82,7 +71,6 @@ alter publication supabase_realtime add table public.results;
 
 alter table public.sessions       enable row level security;
 alter table public.boards         enable row level security;
-alter table public.session_pairs  enable row level security;
 alter table public.results        enable row level security;
 
 drop policy if exists "sessions select" on public.sessions;
@@ -107,18 +95,6 @@ create policy "boards insert" on public.boards
 
 drop policy if exists "boards update" on public.boards;
 create policy "boards update" on public.boards
-  for update using (true);
-
-drop policy if exists "pairs select" on public.session_pairs;
-create policy "pairs select" on public.session_pairs
-  for select using (true);
-
-drop policy if exists "pairs insert" on public.session_pairs;
-create policy "pairs insert" on public.session_pairs
-  for insert with check (true);
-
-drop policy if exists "pairs update" on public.session_pairs;
-create policy "pairs update" on public.session_pairs
   for update using (true);
 
 drop policy if exists "results select" on public.results;

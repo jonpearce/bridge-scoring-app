@@ -66,56 +66,54 @@ check('board3', JSON.stringify([boardInfo(3).dealer, boardInfo(3).ns, boardInfo(
 check('board4', JSON.stringify([boardInfo(4).dealer, boardInfo(4).ns, boardInfo(4).ew]), '["W",true,true]');
 check('board25 rolls over', JSON.stringify([boardInfo(25).dealer, boardInfo(25).ns]), '["N",false]');
 
-// Matchpoints on one board (3 tables):
-// T1 NS plays 4S making 620 (vul),   T2 NS plays 3NT+1 = 630,  T3 NS plays 4S-1 = -100
+// Matchpoints on one board, all pairs sitting N/S:
+// P1 plays 4S making 620 (vul), P3 plays 3NT+1 = 630, P5 plays 4S-1 = -100
 let rows = [
-  { table_num: 1, contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10, ns_pair: 'P1', ew_pair: 'P2' },
-  { table_num: 2, contract_level: 3, strain: 'NT', doubled: 'No', declarer: 'N', tricks: 10, ns_pair: 'P3', ew_pair: 'P4' },
-  { table_num: 3, contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 9, ns_pair: 'P5', ew_pair: 'P6' },
+  { pair: 'P1', side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10 },
+  { pair: 'P3', side: 'NS', contract_level: 3, strain: 'NT', doubled: 'No', declarer: 'N', tricks: 10 },
+  { pair: 'P5', side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 9 },
 ];
 let b = scoreBoard(rows, VUL);
 check('board top', b.top, 4);
-check('T1 points (620 beats one, loses to 630)', b.rows[0].points, 2);
-check('T2 points (630 beats both)', b.rows[1].points, 4);
-check('T3 points (beats none)', b.rows[2].points, 0);
-check('T2 wins', b.rows[1].wins, 2);
+check('P1 points (620 beats one, loses to 630)', b.rows[0].points, 2);
+check('P3 points (630 beats both)', b.rows[1].points, 4);
+check('P5 points (beats none)', b.rows[2].points, 0);
+check('P3 wins', b.rows[1].wins, 2);
 
-// Standings merge by pair name across tables
+// N/S and E/W pairs are scored from their own perspective on the same board:
+// A sits N/S and makes 4S (+420), Z sits E/W and holds 4S to 9 tricks (-50).
 rows = [
-  { table_num: 1, contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10, ns_pair: 'The Club', ew_pair: 'Rivals' },
-  { table_num: 2, contract_level: 3, strain: 'NT', doubled: 'No', declarer: 'S', tricks: 11, ns_pair: 'The Club', ew_pair: 'Odds' },
+  { pair: 'A', side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10 },
+  { pair: 'Z', side: 'EW', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 9 },
 ];
-const byBoard = { 22: scoreBoard(rows, VUL) };
-const st = standings(byBoard, rows.map((r) => ({ ...r, board_num: 22, side: 'NS' })));
-check('standings leader merged first', st[0] && st[0].label, 'The Club');
-check('standings played', st[0] && st[0].played, 2);
+b = scoreBoard(rows, NV);
+check('NS own score', b.rows[0].ownScore, 420);
+check('EW own score is negated N/S score', b.rows[1].ownScore, 50);
+check('NS pair beats the EW result', b.rows[0].points, 2);
+check('EW pair beats the NS result', b.rows[1].points, 2);
 
-// standings EW labelled
-rows = [
-  { table_num: 3, contract_level: 2, strain: 'H', doubled: 'No', declarer: 'E', tricks: 8, ns_pair: 'Ann', ew_pair: 'Zed' },
+// Standings aggregate each pair's matchpoints across boards.
+const raw = [
+  { board_num: 1, pair: 'The Club', side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 11 },
+  { board_num: 1, pair: 'Odds', side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10 },
+  { board_num: 1, pair: 'Rivals', side: 'NS', contract_level: 3, strain: 'NT', doubled: 'No', declarer: 'N', tricks: 9 },
+  { board_num: 2, pair: 'The Club', side: 'NS', contract_level: 3, strain: 'NT', doubled: 'No', declarer: 'N', tricks: 9 },
+  { board_num: 2, pair: 'Odds', side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 9 },
+  { board_num: 2, pair: 'Rivals', side: 'NS', contract_level: 3, strain: 'NT', doubled: 'No', declarer: 'N', tricks: 10 },
 ];
-const byBoard2 = { 5: scoreBoard(rows, NV) };
-const st2 = standings(byBoard2, rows.map((r) => ({ ...r, board_num: 5, side: 'EW' })));
-check('standings EW labelled', st2[0] && st2[0].label, 'Zed');
+const grouped = {};
+for (const r of raw) (grouped[r.board_num] ||= []).push(r);
+const byBoard = {};
+for (const [bn, rs] of Object.entries(grouped)) byBoard[bn] = scoreBoard(rs, NV);
+const st = standings(byBoard);
+check('standings leader', st[0].label, 'The Club');
+check('standings played', st[0].played, 2);
+check('standings points summed', st[0].points, 6);
+check('standings max summed', st[0].max, 8);
+check('standings has everyone', st.length, 3);
 
-// EW and NS matchpoints on the same board are scored separately:
-// T1 & T2 both make 4S as N/S (+620), T3 makes 4S as E/W (-620 to N/S).
-rows = [
-  { table_num: 1, contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10, ns_pair: 'A', ew_pair: 'X' },
-  { table_num: 2, contract_level: 4, strain: 'S', doubled: 'No', declarer: 'S', tricks: 10, ns_pair: 'B', ew_pair: 'Y' },
-  { table_num: 3, contract_level: 4, strain: 'S', doubled: 'No', declarer: 'W', tricks: 10, ns_pair: 'C', ew_pair: 'Z' },
-];
-b = scoreBoard(rows, VUL);
-check('NS ties share top points', b.rows[0].points, 3);
-check('NS loser gets none', b.rows[2].points, 0);
-check('EW winner gets top', b.rows[2].ewPoints, 4);
-check('EW losers tie each other', b.rows[0].ewPoints, 1);
-const stb = standings({ 9: b }, [
-  { ...rows[0], board_num: 9, side: 'NS' },
-  { ...rows[1], board_num: 9, side: 'NS' },
-  { ...rows[2], board_num: 9, side: 'EW' },
-]);
-check('EW pair in standings leads with 4', stb[0].label, 'Z');
+// A pair scoring with no results or no name is ignored.
+check('standings ignores unnamed', standings({ 5: scoreBoard([{ side: 'NS', contract_level: 4, strain: 'S', doubled: 'No', declarer: 'N', tricks: 10 }], NV) }).length, 0);
 
 out(`\n${pass} passed, ${fail} failed`);
 if (typeof process !== 'undefined') process.exit(fail ? 1 : 0);

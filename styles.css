@@ -371,9 +371,6 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing:
 .board-line .mp.hi { color: #2b1c05; background: linear-gradient(180deg, var(--gold-2), var(--gold)); border-radius: 8px; padding: 2px 6px; font-weight: 800; }
 
 /* ---------- Setup ---------- */
-.pair-grid { display: grid; gap: 10px; }
-.pair-cell { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.pair-cell .tag { font-size: 0.85rem; font-weight: 800; color: var(--ink-soft); margin-bottom: 4px; display: block; }
 .field {
   width: 100%; min-height: 54px;
   border: 2px solid var(--line); border-radius: 14px;

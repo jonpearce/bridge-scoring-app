@@ -38,17 +38,15 @@ const supabase = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : nu
 /* ---------- state ---------- */
 const state = {
   screen: 'home',
-  sheet: null,                    // { done: {boardNum}, detail: {boardNum}, tables }
+  sheet: null,                    // { done: {boardNum}, detail: {boardNum}, reset }
   todaySession: null,             // the single session set up for today
   session: null,
   boards: [],
-  pairs: [],
   results: [],
-  myTable: null,                  // pinned table number for this phone
+  name: '',                       // this pair's name, tagged on every result
+  side: 'NS',                     // this pair sits N/S or E/W for the session
   draft: {
-    tables: 6,
     boards: 24,
-    pairs: {},                    // tableNum -> {ns, ew}
     vuln: {},                     // boardNum -> {ns, ew}
   },
   entry: null,                    // current contract being entered
@@ -57,9 +55,10 @@ const state = {
 };
 
 const ls = {
-  pin(code) { return localStorage.getItem(`bridge:pin:${code}`); },
-  setPin(code, t) { localStorage.setItem(`bridge:pin:${code}`, t); },
-  clearPin(code) { localStorage.removeItem(`bridge:pin:${code}`); },
+  name() { return localStorage.getItem('bridge:name') || ''; },
+  setName(n) { localStorage.setItem('bridge:name', n); },
+  side() { return localStorage.getItem('bridge:side') || 'NS'; },
+  setSide(s) { localStorage.setItem('bridge:side', s); },
 };
 
 /* ---------- realtime ---------- */
@@ -97,9 +96,6 @@ function normalizeResults() {
 }
 
 /* ---------- computation ---------- */
-function pairAt(tableNum) {
-  return state.pairs.find((p) => p.table_num === tableNum) || { ns_pair: `T${tableNum} NS`, ew_pair: `T${tableNum} EW` };
-}
 function vulnFor(boardNum) {
   return state.boards.find((b) => b.board_num === boardNum) || boardInfo(boardNum);
 }
@@ -116,29 +112,14 @@ function computeBoards() {
   }
   return out;
 }
-function computeStandings() {
-  const byBoard = computeBoards();
-  const shaped = [];
-  for (const r of state.results) {
-    const side = r.declarer ? directionSideJS(r.declarer) : null;
-    const p = pairAt(r.table_num);
-    if (side) {
-      shaped.push({ ...r, side, ns_pair: p.ns_pair, ew_pair: p.ew_pair });
-    } else {
-      // passed out: scores zero for both pairs, count it on both sides
-      shaped.push({ ...r, side: 'NS', ns_pair: p.ns_pair, ew_pair: p.ew_pair });
-      shaped.push({ ...r, side: 'EW', ns_pair: p.ns_pair, ew_pair: p.ew_pair });
-    }
-  }
-  return standings(byBoard, shaped);
-}
-const directionSideJS = (d) => (d === 'N' || d === 'S' ? 'NS' : 'EW');
+const computeStandings = () => standings(computeBoards());
+const myResultFor = (bn) => state.results.find((r) => r.board_num === bn && r.pair === state.name);
 
 /* ---------- data ---------- */
-async function createSession(numTables, numBoards, title) {
+async function createSession(numBoards, title) {
   const code = randomCode();
   const { data, error } = await supabase.from('sessions').insert({
-    code, title: title || null, num_tables: numTables, num_boards: numBoards,
+    code, title: title || null, num_boards: numBoards,
   }).select().single();
   if (error) throw new Error(error.message);
 
@@ -147,13 +128,8 @@ async function createSession(numTables, numBoards, title) {
     const bi = boardInfo(n);
     boardRows.push({ session_id: code, board_num: n, dealer: bi.dealer, vul_ns: bi.ns, vul_ew: bi.ew });
   }
-  const pairRows = Array.from({ length: numTables }, (_, i) => ({
-    session_id: code, table_num: i + 1, ns_pair: `NS table ${i + 1}`, ew_pair: `EW table ${i + 1}`,
-  }));
   const { error: bErr } = await supabase.from('boards').insert(boardRows);
   if (bErr) throw new Error(bErr.message);
-  const { error: pErr } = await supabase.from('session_pairs').insert(pairRows);
-  if (pErr) throw new Error(pErr.message);
   return data;
 }
 
@@ -182,19 +158,17 @@ async function todaySession() {
 
 async function loadSession(sess) {
   state.session = sess;
-  const [boards, pairs, results] = await Promise.all([
+  const [boards, results] = await Promise.all([
     supabase.from('boards').select().eq('session_id', sess.code).order('board_num'),
-    supabase.from('session_pairs').select().eq('session_id', sess.code).order('table_num'),
     supabase.from('results').select().eq('session_id', sess.code).order('board_num'),
   ]);
   if (boards.error) throw new Error(boards.error.message);
-  if (pairs.error) throw new Error(pairs.error.message);
   if (results.error) throw new Error(results.error.message);
   state.boards = boards.data;
-  state.pairs = pairs.data;
   state.results = results.data;
   normalizeResults();
-  state.myTable = state.myTable ?? (Number(ls.pin(sess.code)) || (sess.num_tables === 1 ? 1 : null));
+  state.name = state.name || ls.name();
+  state.side = state.side || ls.side();
   state.standingsBoard = null;
   refreshEntryMp();
   subscribe(sess.code);
@@ -208,7 +182,8 @@ async function upsertResult() {
   const row = {
     session_id: state.session.code,
     board_num: e.boardNum,
-    table_num: state.myTable,
+    pair: state.name,
+    side: state.side,
     contract_level: blank ? null : e.level,
     strain: blank ? null : e.strain,
     doubled: blank ? 'No' : (e.doubled || 'No'),
@@ -217,7 +192,7 @@ async function upsertResult() {
     tricks: blank ? null : e.tricks,
     score,
   };
-  const { error } = await supabase.from('results').upsert(row, { onConflict: 'session_id,board_num,table_num' });
+  const { error } = await supabase.from('results').upsert(row, { onConflict: 'session_id,board_num,pair' });
   if (error) throw new Error(error.message);
   return score;
 }
@@ -227,7 +202,7 @@ async function deleteResult(boardNum) {
     .delete()
     .eq('session_id', state.session.code)
     .eq('board_num', boardNum)
-    .eq('table_num', state.myTable);
+    .eq('pair', state.name);
   if (error) throw new Error(error.message);
 }
 
@@ -243,13 +218,9 @@ async function resetResults() {
 
 async function saveSetup() {
   const sess = state.session;
-  const pairRows = Object.entries(state.draft.pairs).map(([t, p]) => ({
-    session_id: sess.code, table_num: +t, ns_pair: p.ns, ew_pair: p.ew,
-  }));
   const boardRows = Object.entries(state.draft.vuln).map(([bn, v]) => ({
     session_id: sess.code, board_num: +bn, dealer: boardInfo(+bn).dealer, vul_ns: v.ns, vul_ew: v.ew,
   }));
-  if (pairRows.length) await supabase.from('session_pairs').upsert(pairRows, { onConflict: 'session_id,table_num' });
   if (boardRows.length) await supabase.from('boards').upsert(boardRows, { onConflict: 'session_id,board_num' });
   await loadSession(sess);
 }
@@ -281,11 +252,11 @@ const entryIsBlank = () => !state.entry.level && !state.entry.strain && !state.e
 const entryIsComplete = () => !!(state.entry.level && state.entry.strain && state.entry.declarer && state.entry.tricks != null);
 function entryPreview() {
   const e = state.entry;
-  if (entryIsBlank()) return { nsScore: null, declarerSide: null, down: 0, made: 0 };
-  if (!entryIsComplete()) return { nsScore: null, declarerSide: null, down: 0, made: 0 };
+  if (entryIsBlank() || !entryIsComplete()) return { nsScore: null, ownScore: null, down: 0, made: 0 };
   const v = vulnFor(e.boardNum);
   const nsScore = makeScore(e.level, e.strain, e.doubled || 'No', e.tricks, e.declarer, { ns: !!v.vul_ns, ew: !!v.vul_ew });
-  return { nsScore, declarerSide: directionSideJS(e.declarer), down: Math.max(0, e.level + 6 - e.tricks), made: Math.max(0, e.tricks - (e.level + 6)) };
+  const ownScore = state.side === 'EW' ? -nsScore : nsScore;
+  return { nsScore, ownScore, down: Math.max(0, e.level + 6 - e.tricks), made: Math.max(0, e.tricks - (e.level + 6)) };
 }
 
 // live matchpoints for the current in-progress entry versus known results
@@ -295,7 +266,9 @@ function refreshEntryMp() {
   if (entryIsBlank() || !entryIsComplete()) { state.entry.mp = null; return; }
   const v = vulnFor(e.boardNum);
   const mine = {
-    table_num: 999,
+    id: '__mine__',
+    pair: state.name,
+    side: state.side,
     contract_level: e.level,
     strain: e.strain,
     doubled: e.doubled || 'No',
@@ -303,16 +276,13 @@ function refreshEntryMp() {
     tricks: e.tricks,
   };
   const rows = [
-    ...state.results.filter((r) => r.board_num === e.boardNum && r.table_num !== state.myTable),
+    ...state.results.filter((r) => r.board_num === e.boardNum && r.pair !== state.name),
     mine,
   ];
   if (rows.length < 2) { state.entry.mp = null; return; }
   const sb = scoreBoard(rows, { ns: !!v.vul_ns, ew: !!v.vul_ew });
-  const mineRow = sb.rows.find((r) => r.table_num === 999);
-  if (mineRow) {
-    const pts = directionSideJS(e.declarer) === 'EW' ? mineRow.ewPoints : mineRow.points;
-    state.entry.mp = { points: pts, top: sb.top };
-  } else state.entry.mp = null;
+  const mineRow = sb.rows.find((r) => r.id === '__mine__');
+  state.entry.mp = mineRow ? { points: mineRow.points, top: sb.top } : null;
 }
 
 /* ---------- render ---------- */
@@ -333,21 +303,12 @@ function render() {
 
 function renderSheet() {
   const s = state.sheet;
-  if (s === 'tables') {
-    const opts = Array.from({ length: state.session.num_tables }, (_, i) => i + 1)
-      .map((t) => `<div class="chip ${t === state.myTable ? 'on' : ''}" data-action="pin_table" data-t="${t}">Table ${t}</div>`).join('');
-    return `
-    <div class="sheet-back" data-action="sheet_close"><div class="sheet" data-stop="1">
-      <div class="label">Which table is this phone at?</div>
-      <div class="chips" style="grid-auto-flow:row;grid-template-columns:repeat(2,1fr)">${opts}</div>
-    </div></div>`;
-  }
   if (s.done) return renderDoneSheet();
   if (s.detail) return renderDetailSheet();
   if (s === 'reset') return `
     <div class="sheet-back" data-action="sheet_close"><div class="sheet" data-stop="1">
       <h2 class="screen-title" style="margin-bottom:4px">Reset all scores?</h2>
-      <div class="muted" style="margin-bottom:16px">This deletes every result entered at all tables. Scores on the board list and live standings will be wiped.</div>
+      <div class="muted" style="margin-bottom:16px">This deletes every result entered by every pair. Scores on the board list and live standings will be wiped.</div>
       <button class="btn danger grow" data-action="reset_confirm">Delete all scores</button>
       <button class="btn soft grow" data-action="sheet_close">Cancel</button>
     </div></div>`;
@@ -356,27 +317,26 @@ function renderSheet() {
 
 function renderDoneSheet() {
   const bn = state.sheet.done;
-  const onEntry = state.results.find((r) => r.board_num === bn && r.table_num === state.myTable);
+  const onEntry = myResultFor(bn);
   const v = vulnFor(bn);
   const sb = computeBoards()[bn];
   const rows = sb ? sb.rows.slice().sort((a, b) => b.nsScore - a.nsScore) : [];
   const highest = rows[0]?.nsScore;
   return `
     <div class="sheet-back"><div class="sheet">
-      <h2 class="screen-title" style="margin-bottom:2px">Board ${bn} — other tables</h2>
+      <h2 class="screen-title" style="margin-bottom:2px">Board ${bn} — all results</h2>
       <div class="muted" style="margin-bottom:14px">${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))} · ${esc(displayContract(onEntry ? { level: onEntry.contract_level, strain: onEntry.strain, doubled: onEntry.doubled } : null))}</div>
       ${rows.length === 0 ? `<div class="card">No results yet on this board.</div>` : rows.map((r) => {
-        const mine = r.table_num === state.myTable;
-        const lab = pairAt(r.table_num)[r.declarer ? directionSideJS(r.declarer) : 'ns_pair'] || '';
+        const mine = r.pair === state.name;
         const best = r.nsScore === highest;
         return `
         <div class="summary-row${mine ? ' highlight' : ''}">
-          <div class="fp" style="width:64px">T${r.table_num}</div>
-          <div style="flex:1">
-            <div style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${r.declarer}` : ''}${lab ? ` · <span class="muted">${esc(lab)}</span>` : ''}</div>
+          <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}</div>
+          <div style="text-align:right">
+            <div style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${r.declarer}` : ''}</div>
             <div class="small muted">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${best && !mine ? ' · <b>best</b>' : ''}</div>
           </div>
-          <div style="font-weight:800;font-size:1.1rem">${fmtScore(r.nsScore)}</div>
+          <div style="font-weight:800;font-size:1.1rem;min-width:58px;text-align:right">${fmtScore(r.ownScore)}</div>
           <div class="mp">${r.points}</div>
         </div>`;
       }).join('')}
@@ -398,12 +358,12 @@ function renderDetailSheet() {
       </div>
       <div class="muted" style="margin-bottom:12px">Dealer ${v.dealer} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length === 0 ? '<div class="card">No results yet on this board.</div>' : `
-      ${rows.sort((a, b) => b.points - a.points).map((r) => `
-        <div class="board-line ${r.table_num === state.myTable ? 'mine' : ''}">
-          <span class="t">T${r.table_num}</span>
+      ${rows.slice().sort((a, b) => b.points - a.points).map((r) => `
+        <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
+          <span class="t">${esc(r.pair || '—')}</span>
           <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${r.declarer}` : ''}</span>
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
-          <span class="sc ${r.nsScore > 0 ? 'plus' : r.nsScore < 0 ? 'minus' : ''}">${fmtScore(r.nsScore)}</span>
+          <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
           <span class="mp ${r.points === sb.top ? 'hi' : ''}">${r.points} MP</span>
         </div>`).join('')}`}
     </div></div>`;
@@ -415,6 +375,7 @@ function renderHome() {
   const title = state.todaySession?.title || 'today';
   const today = new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   const badge = configured ? '' : `<div class="card" style="border-color:var(--gold)"><b>Not connected yet.</b><br><span class="small muted">Put your Supabase URL and key in config.js, then deploy (see README).</span></div>`;
+  const ready = has && !!state.name.trim();
   return `
     <div class="screen">
       <div class="hero">
@@ -424,15 +385,25 @@ function renderHome() {
       </div>
       ${badge}
 
-      <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${has ? '' : 'disabled'}>
-        ${has ? `Join today's session` : 'No session set up yet'}
+      <div class="card">
+        <span class="label" style="margin-top:0">Your pair name</span>
+        <input class="field" data-action="name_input" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
+        <span class="label">We sit</span>
+        <div class="chips">
+          <button class="chip ${state.side === 'NS' ? 'on' : ''}" data-action="side_set" data-s="NS">N/S</button>
+          <button class="chip ${state.side === 'EW' ? 'on' : ''}" data-action="side_set" data-s="EW">E/W</button>
+        </div>
+      </div>
+
+      <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${ready ? '' : 'disabled'}>
+        ${has ? (ready ? `Join today's session` : 'Enter your pair name') : 'No session set up yet'}
       </button>
-      ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">${esc(title)} is ready — tap to join and pick your table.</p>`
+      ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">${esc(title)} is ready — tap to join and enter your scores.</p>`
         : `<p class="small muted" style="text-align:center;margin-bottom:18px">The organiser sets one up below before scoring begins.</p>`}
 
       <div class="small" style="text-align:center">
         <button class="btn small ghost" data-action="go_create" style="width:auto;margin:0 auto">Set up session</button>
-        <div class="small muted" style="margin-top:6px">For the organiser — tables, boards &amp; pairs</div>
+        <div class="small muted" style="margin-top:6px">For the organiser — boards &amp; vulnerability</div>
       </div>
     </div>`;
 }
@@ -443,14 +414,7 @@ function renderCreate() {
     <div class="screen">
       <div class="topbar"><button class="back" data-action="go_home">‹</button></div>
       <h2 class="screen-title">New session</h2>
-      <p class="screen-sub">How many tables and boards?</p>
-
-      <span class="label">Tables</span>
-      <div class="stepper">
-        <button class="step-btn" data-action="create_tables" data-d="-1">−</button>
-        <div><span class="step-val">${d.tables}</span><span class="step-lab">tables</span></div>
-        <button class="step-btn" data-action="create_tables" data-d="1">+</button>
-      </div>
+      <p class="screen-sub">How many boards?</p>
 
       <span class="label">Boards</span>
       <div class="stepper" style="margin-bottom:8px">
@@ -458,32 +422,16 @@ function renderCreate() {
         <div><span class="step-val">${d.boards}</span><span class="step-lab">boards</span></div>
         <button class="step-btn" data-action="create_boards" data-d="1">+</button>
       </div>
-      <div class="small muted" style="text-align:center">Vulnerability comes automatically from board numbers — <br>easy to adjust next.</div>
+      <div class="small muted" style="text-align:center">Vulnerability comes automatically from the board numbers — <br>easy to adjust next.</div>
 
-      <button class="btn grow" data-action="create_go">Create room</button>
+      <button class="btn grow" data-action="create_go">Create session</button>
     </div>`;
 }
 
 function renderSetup() {
-  const d = state.draft;
-  const pairRows = Array.from({ length: state.session.num_tables }, (_, i) => i + 1).map((t) => {
-    const p = d.pairs[t] || { ns: pairAt(t).ns_pair, ew: pairAt(t).ew_pair };
-    return `
-      <div class="pair-cell">
-        <div>
-          <span class="tag">Table ${t} — N/S</span>
-          <input class="field" data-action="pair_input" data-t="${t}" data-side="ns" value="${esc(p.ns)}" placeholder="Pair or names" />
-        </div>
-        <div>
-          <span class="tag">Table ${t} — E/W</span>
-          <input class="field" data-action="pair_input" data-t="${t}" data-side="ew" value="${esc(p.ew)}" placeholder="Pair or names" />
-        </div>
-      </div>`;
-  }).join('');
-
   const vulnCells = Array.from({ length: state.session.num_boards }, (_, i) => {
     const n = i + 1;
-    const v = d.vuln[n] || { ns: boardInfo(n).ns, ew: boardInfo(n).ew };
+    const v = state.draft.vuln[n] || { ns: boardInfo(n).ns, ew: boardInfo(n).ew };
     const st = vulnerabilityText({ ns: v.ns, ew: v.ew });
     return `
       <button class="vuln-cell" data-action="vuln_toggle" data-bn="${n}">
@@ -503,13 +451,10 @@ function renderSetup() {
         <div class="small muted">Room ${esc(state.session.code)}</div>
       </div></div>
 
-      <div class="label">Vulnerability — tap to change</div>
-      <p class="small muted" style="margin-top:-6px">Already set correctly from the board numbers. Tap any board to change.</p>
+      <h2 class="screen-title" style="margin-bottom:4px">Vulnerability</h2>
+      <p class="screen-sub">Vulnerability is already set correctly from the board numbers, so this step is <b>optional</b> — tap a board only if you need to change it.</p>
       <div class="vuln-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:22px">${vulOpen}</div>
       <div class="vuln-grid" style="grid-template-columns:repeat(2,1fr);margin-bottom:22px">${vulFixed}</div>
-
-      <div class="label">Pairs at each table (optional)</div>
-      <div class="pair-grid">${pairRows}</div>
 
       <button class="btn grow" data-action="save_setup">Save &amp; go to room</button>
 
@@ -525,8 +470,9 @@ function renderRoom() {
   const byBoard = computeBoards();
   const items = Array.from({ length: sess.num_boards }, (_, i) => {
     const n = i + 1;
-    const r = state.results.find((x) => x.board_num === n && x.table_num === state.myTable);
+    const r = myResultFor(n);
     const sb = byBoard[n];
+    const mine = sb ? sb.rows.find((x) => x.pair === state.name) : null;
     return `
       <button class="board-item ${r ? 'done' : ''}" data-action="open_board" data-bn="${n}">
         <span class="num">${n}</span>
@@ -534,25 +480,22 @@ function renderRoom() {
           ${r
             ? `<span style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</span>` +
               (r.declarer ? ` · ${r.declarer}` : '') +
-              `<span class="tiny">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${sb ? ` · ${sb.rows.find((x) => x.table_num === state.myTable)?.points}/${sb.top} MP` : ''}</span>`
+              `<span class="tiny">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${mine ? ` · ${mine.points}/${sb.top} MP` : ''}</span>`
             : 'Tap to enter score'}
         </span>
-        <span class="result">${r ? fmtScore(r.score) : '→'}</span>
+        <span class="result">${r ? fmtScore(r.ownScore) : '→'}</span>
       </button>`;
   }).join('');
 
+  const sideLab = state.side === 'EW' ? 'E/W' : 'N/S';
   return `
     <div class="screen">
       <div class="topbar">
         <button class="back" data-action="go_home">‹</button>
         <div style="flex:1">
           <div style="font-weight:800;font-size:1.1rem">${esc(sess.title || 'Session')}</div>
+          <div class="small muted">${esc(state.name || 'Your pair')} · ${sideLab}</div>
         </div>
-      </div>
-
-      <div class="card flush" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin-bottom:16px">
-        <div class="small muted" style="font-weight:800;font-size:1.15rem;white-space:nowrap">Table ${state.myTable}</div>
-        <button class="btn small ghost" data-action="open_tables" style="width:auto;padding:5px 10px;font-size:0.8rem;min-height:0">Change table</button>
       </div>
 
       <button class="btn soft grow" style="margin-bottom:16px" data-action="go_standings">Live results &amp; standings</button>
@@ -562,9 +505,9 @@ function renderRoom() {
     </div>`;
 }
 
-function nextBoardFor(tableNum, byBoard) {
+function nextBoardFor(pair) {
   for (let n = 1; n <= state.session.num_boards; n++) {
-    const has = state.results.some((r) => r.board_num === n && r.table_num === tableNum);
+    const has = state.results.some((r) => r.board_num === n && r.pair === pair);
     if (!has) return n;
   }
   return 1;
@@ -600,7 +543,7 @@ function renderEntry() {
   const leadRanks = RANKS.map((rk) =>
     `<button class="chip ${e.leadRank === rk ? 'on' : ''}" data-action="ent_lead_rank" data-r="${rk}">${rk}</button>`).join('');
 
-  const sideLab = p.declarerSide ? (p.nsScore != null && p.nsScore >= 0 ? 'N/S' : 'E/W') : '';
+  const sideLab = state.side === 'EW' ? 'E/W' : 'N/S';
   const dealerBtns = ['N', 'E', 'S', 'W'].map((d) =>
     `<button class="chip ${birth.dealer === d ? 'on' : ''}" data-action="ent_dealer" data-d="${d}">${d}</button>`).join('');
   const vulnBtns = [
@@ -618,7 +561,7 @@ function renderEntry() {
       <div class="topbar">
         <button class="back" data-action="leave_entry">‹</button>
         <div style="flex:1">
-          <div style="font-weight:800;font-size:1.05rem">Table ${state.myTable} · Board ${e.boardNum}</div>
+          <div style="font-weight:800;font-size:1.05rem">${esc(state.name || 'Your pair')} · Board ${e.boardNum}</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn small soft" data-action="ent_prev_board" style="min-height:36px;width:auto;padding:4px 12px">‹</button>
@@ -667,10 +610,10 @@ function renderEntry() {
 
       <div class="score-preview">
         <div>
-          <div class="who">${sideLab ? `${sideLab} score` : 'Score'}</div>
+          <div class="who">${sideLab} score</div>
           ${showMp ? `<div class="small" style="opacity:0.85">${showMp.points} of ${showMp.top} matchpoints</div>` : ''}
         </div>
-        <div class="amt">${p.nsScore == null ? (blank ? '0' : '') : fmtScore(p.nsScore)}</div>
+        <div class="amt">${p.ownScore == null ? (blank ? '0' : '') : fmtScore(p.ownScore)}</div>
       </div>
 
       <button class="btn grow" data-action="ent_save" style="min-height:64px;font-size:1.25rem">Save result</button>
@@ -705,11 +648,11 @@ function renderStandings() {
     boardsBody = `
       <div class="small muted" style="margin:-6px 0 10px">Dealer ${v.dealer} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length ? rows.map((r) => `
-        <div class="board-line ${r.table_num === state.myTable ? 'mine' : ''}">
-          <span class="t">T${r.table_num}</span>
+        <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
+          <span class="t">${esc(r.pair || '—')}</span>
           <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</span>
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
-          <span class="sc ${r.nsScore > 0 ? 'plus' : r.nsScore < 0 ? 'minus' : ''}">${fmtScore(r.nsScore)}</span>
+          <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
           <span class="mp ${r.points === info.top ? 'hi' : ''}">${r.points} MP</span>
         </div>`).join('') : '<div class="card">No results on this board yet.</div>'}`;
   }
@@ -736,7 +679,7 @@ function renderStandings() {
             <span class="who">${esc(s.label)}<span class="small muted" style="display:block;font-weight:400">${s.played} board${s.played === 1 ? '' : 's'} · total ${fmtScore(s.score)}</span></span>
             <span class="pts"><span class="big">${s.points}</span> <span class="pct">· ${s.pct}%</span></span>
           </div>`).join('')
-        : '<div class="card">No results yet. Scores appear here live as tables enter them.</div>'}
+        : '<div class="card">No results yet. Scores appear here live as pairs enter them.</div>'}
       ` : `
         <div class="chips" style="grid-auto-flow:column;overflow-x:auto;padding-bottom:4px;justify-content:start;gap:6px">${boardsTabs}</div>
         ${boardsBody}
@@ -748,7 +691,10 @@ function renderStandings() {
 /* ---------- action dispatch ---------- */
 const actions = {
   go_home() { closeSheets(); state.screen = 'home'; render(); refreshToday(); },
+  name_input(el) { state.name = el.value; ls.setName(el.value); },
+  side_set(el) { state.side = el.dataset.s; ls.setSide(el.dataset.s); render(); },
   join_today() { closeSheets(); busy(async () => {
+    if (!state.name.trim()) return toast('Enter your pair name first');
     state.todaySession = state.todaySession || await todaySession();
     if (!state.todaySession) return toast('No session has been set up yet');
     await loadSession(state.todaySession);
@@ -761,7 +707,7 @@ const actions = {
       updateDraftFromSession();
       state.screen = 'setup'; render();
     } else {
-      state.draft.tables = 6; state.draft.boards = 24; state.screen = 'create'; render();
+      state.draft.boards = 24; state.screen = 'create'; render();
     }
   }, 'Opening…'); },
   sheet_close() { closeSheets(); render(); },
@@ -772,18 +718,13 @@ const actions = {
     toast('All scores deleted');
   }, 'Resetting…'); },
 
-  create_tables(el) { state.draft.tables = Math.min(6, Math.max(1, state.draft.tables + +el.dataset.d)); render(); },
   create_boards(el) { state.draft.boards = Math.min(24, Math.max(1, state.draft.boards + +el.dataset.d)); render(); },
   create_go() { busy(async () => {
-    const s = await createSession(state.draft.tables, state.draft.boards, null);
+    const s = await createSession(state.draft.boards, null);
     await loadSession(s);
     updateDraftFromSession();
     state.screen = 'setup'; render();
-  }, 'Creating room…'); },
-  pair_input(el) {
-    const t = el.dataset.t, side = el.dataset.side;
-    (state.draft.pairs[t] ||= {}); state.draft.pairs[t][side] = el.value;
-  },
+  }, 'Creating session…'); },
   vuln_toggle(el) {
     const bn = +el.dataset.bn;
     const cur = state.draft.vuln[bn] || { ns: boardInfo(bn).ns, ew: boardInfo(bn).ew };
@@ -796,22 +737,14 @@ const actions = {
   },
   save_setup() { busy(async () => { await saveSetup(); updateDraftFromSession(); enterRoom(); }, 'Saving…'); },
 
-  open_tables() { state.sheet = 'tables'; render(); },
-  pin_table(el) {
-    const t = +el.dataset.t;
-    state.myTable = t; ls.setPin(state.session.code, String(t));
-    closeSheets(); enterRoom();
-  },
   open_entry_next() {
-    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
-    const bn = nextBoardFor(state.myTable, computeBoards());
-    newEntry(bn, state.results.find((r) => r.board_num === bn && r.table_num === state.myTable));
+    const bn = nextBoardFor(state.name);
+    newEntry(bn, myResultFor(bn));
     state.screen = 'entry'; render();
   },
   open_board(el) {
-    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
     const bn = +el.dataset.bn;
-    newEntry(bn, state.results.find((r) => r.board_num === bn && r.table_num === state.myTable));
+    newEntry(bn, myResultFor(bn));
     state.screen = 'entry'; render();
   },
   ent_prev_board() {
@@ -851,7 +784,6 @@ const actions = {
   },
   ent_save() {
     const e = state.entry;
-    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
     if (!entryIsBlank() && (!e.strain || !e.declarer)) {
       toast('Choose the contract and who declared first');
       return;
@@ -879,8 +811,7 @@ const actions = {
       return;
     }
     const bn = state.sheet.done + 1;
-    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
-    newEntry(bn, state.results.find((r) => r.board_num === bn && r.table_num === state.myTable));
+    newEntry(bn, myResultFor(bn));
     state.sheet = null; state.screen = 'entry'; render();
   },
 
@@ -892,12 +823,10 @@ const actions = {
 
 function enterRoom() {
   state.screen = 'room';
-  if (!state.myTable && state.session && state.session.num_tables > 1) state.sheet = 'tables';
   render();
 }
 function closeSheets() { state.sheet = null; }
 function updateDraftFromSession() {
-  state.draft.pairs = {};
   state.draft.vuln = {};
 }
 

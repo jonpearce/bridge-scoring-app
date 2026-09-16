@@ -849,7 +849,6 @@ async function busy(fn, msg) {
 
 /* ---------- global listeners ---------- */
 appEl.addEventListener('click', (ev) => {
-  if (ev.target.closest('[data-stop]')) return;
   const el = ev.target.closest('[data-action]');
   if (!el) return;
   const a = actions[el.dataset.action];

@@ -1,0 +1,9 @@
+{
+  "name": "duplicate-bridge-scoring",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node bridge.test.mjs"
+  }
+}

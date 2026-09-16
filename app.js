@@ -13,10 +13,11 @@ import {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const frag = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content; };
 const fmtScore = (n) => (n > 0 ? `+${n}` : `${n}`);
-const suits = ['♣', '♦', '♥', '♠', 'NT'];
-const SUIT_COLORS = { '♣': 'var(--green)', '♦': 'var(--red)', '♥': 'var(--red)', '♠': 'var(--ink)', 'NT': 'var(--accent-2)' };
+const suits = ['C', 'D', 'H', 'S', 'NT'];
+const SUIT_COLORS = { C: 'var(--green)', D: 'var(--red)', H: 'var(--red)', S: 'var(--ink)', NT: 'var(--accent-2)' };
 const RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A'];
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const normSuit = (s) => ({ '♣': 'C', '♦': 'D', '♥': 'H', '♠': 'S' }[s] || s);
 
 const appEl = document.getElementById('app');
 let toastTimer = null;
@@ -84,9 +85,18 @@ function applyResultChange(p) {
     state.results = state.results.filter((x) => x.id !== p.old.id);
     return;
   }
+  if (typeof r.strain === 'string') r.strain = normSuit(r.strain);
+  if (typeof r.open_lead === 'string' && r.open_lead.length === 2) r.open_lead = normSuit(r.open_lead[0]) + r.open_lead[1];
   const i = state.results.findIndex((x) => x.id === r.id);
   if (i >= 0) state.results[i] = r; else state.results.push(r);
   refreshEntryMp();
+}
+
+function normalizeResults() {
+  for (const r of state.results) {
+    if (typeof r.strain === 'string') r.strain = normSuit(r.strain);
+    if (typeof r.open_lead === 'string' && r.open_lead.length === 2) r.open_lead = normSuit(r.open_lead[0]) + r.open_lead[1];
+  }
 }
 
 /* ---------- computation ---------- */
@@ -173,6 +183,7 @@ async function loadSession(sess) {
   state.boards = boards.data;
   state.pairs = pairs.data;
   state.results = results.data;
+  normalizeResults();
   state.myTable = state.myTable ?? (Number(ls.pin(sess.code)) || (sess.num_tables === 1 ? 1 : null));
   state.standingsBoard = null;
   const rec = ls.recent.filter((x) => x.code !== sess.code);
@@ -228,7 +239,7 @@ async function saveSetup() {
 /* ---------- entry state ---------- */
 function newEntry(boardNum, existing) {
   const e = existing
-    ? { boardNum, pass: existing.contract_level == null, level: existing.contract_level || 3, strain: existing.strain || 'NT', doubled: existing.doubled === 'No' ? 'No' : existing.doubled, declarer: existing.declarer || 'N', leadSuit: existing.open_lead?.slice(0, 1), leadRank: existing.open_lead?.slice(1), tricks: existing.tricks ?? 8, editingId: existing.id || null }
+    ? { boardNum, pass: existing.contract_level == null, level: existing.contract_level || 3, strain: normSuit(existing.strain || 'NT'), doubled: existing.doubled === 'No' ? 'No' : existing.doubled, declarer: existing.declarer || 'N', leadSuit: normSuit(existing.open_lead?.slice(0, 1)), leadRank: existing.open_lead?.slice(1), tricks: existing.tricks ?? 8, editingId: existing.id || null }
     : { boardNum, pass: false, level: 3, strain: 'NT', doubled: 'No', declarer: 'N', leadSuit: null, leadRank: null, tricks: 9, editingId: null };
   state.entry = e;
   return e;
@@ -546,7 +557,7 @@ function renderEntry() {
   const birth = vulnFor(e.boardNum);
   const p = entryPreview();
   const showMp = e.mp;
-  const leadTxt = e.leadSuit && e.leadRank ? `${e.leadSuit}${e.leadRank}` : null;
+  const leadTxt = e.leadSuit && e.leadRank ? `${strainGlyph(e.leadSuit)}${e.leadRank}` : null;
 
   const passBtn = `
     <button class="chip ${e.pass ? 'on' : ''}" data-action="ent_pass" style="font-size:1.1rem">Passed out</button>`;
@@ -557,16 +568,19 @@ function renderEntry() {
   }
   const strainBtns = suits.map((s) => {
     const on = !e.pass && s === e.strain;
+    const glyph = strainGlyph(s);
     const style = on ? '' : ` style="color:${SUIT_COLORS[s]}"`;
-    return `<button class="chip suits-btn ${on ? 'on' : ''}"${style} data-action="ent_strain" data-s="${s}">${s}</button>`;
+    return `<button class="chip suits-btn ${on ? 'on' : ''}"${style} data-action="ent_strain" data-s="${s}">${glyph}</button>`;
   }).join('');
   const doubleBtns = ['No', 'X', 'XX'].map((d) =>
     `<button class="chip ${!e.pass && e.doubled === d ? 'on' : ''}" data-action="ent_double" data-d="${d}">${d === 'No' ? 'Undoubled' : d}</button>`).join('');
   const dirBtns = ['N', 'E', 'S', 'W'].map((di) =>
     `<button class="chip ${!e.pass && e.declarer === di ? 'on' : ''}" data-action="ent_declarer" data-d="${di}">${di}</button>`).join('');
 
-  const leadSuits = ['♣', '♦', '♥', '♠'].map((s) =>
-    `<button class="chip ${e.leadSuit === s ? 'on' : ''}" style="color:${SUIT_COLORS[s]}" data-action="ent_lead_suit" data-s="${s}">${s}</button>`).join('');
+  const leadSuits = ['C', 'D', 'H', 'S'].map((s) => {
+    const glyph = strainGlyph(s);
+    return `<button class="chip ${e.leadSuit === s ? 'on' : ''}" style="color:${SUIT_COLORS[s]}" data-action="ent_lead_suit" data-s="${s}">${glyph}</button>`;
+  }).join('');
   const leadRanks = RANKS.map((rk) =>
     `<button class="chip ${e.leadRank === rk ? 'on' : ''}" data-action="ent_lead_rank" data-r="${rk}">${rk}</button>`).join('');
 

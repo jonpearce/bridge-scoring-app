@@ -60,9 +60,18 @@ create trigger results_updated_at
 
 -- ---------- Realtime ----------
 -- Publish live changes for these tables so every phone updates instantly.
-alter publication supabase_realtime add table public.sessions;
-alter publication supabase_realtime add table public.boards;
-alter publication supabase_realtime add table public.results;
+do $$
+declare t text;
+begin
+  foreach t in array array['sessions', 'boards', 'results'] loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
 
 -- ---------- Row Level Security ----------
 -- This app is a casual club tool used without login, so the anon key is given

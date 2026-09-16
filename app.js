@@ -231,6 +231,16 @@ async function deleteResult(boardNum) {
   if (error) throw new Error(error.message);
 }
 
+async function resetResults() {
+  const { error } = await supabase.from('results')
+    .delete()
+    .eq('session_id', state.session.code);
+  if (error) throw new Error(error.message);
+  state.results = [];
+  refreshEntryMp();
+  render();
+}
+
 async function saveSetup() {
   const sess = state.session;
   const pairRows = Object.entries(state.draft.pairs).map(([t, p]) => ({
@@ -332,6 +342,13 @@ function renderSheet() {
   }
   if (s.done) return renderDoneSheet();
   if (s.detail) return renderDetailSheet();
+  if (s === 'reset') return `
+    <div class="sheet-back" data-action="sheet_close"><div class="sheet" data-stop="1">
+      <h2 class="screen-title" style="margin-bottom:4px">Reset all scores?</h2>
+      <div class="muted" style="margin-bottom:16px">This deletes every result entered at all tables. Scores on the board list and live standings will be wiped.</div>
+      <button class="btn danger grow" data-action="reset_confirm">Delete all scores</button>
+      <button class="btn soft grow" data-action="sheet_close">Cancel</button>
+    </div></div>`;
   return '';
 }
 
@@ -533,6 +550,10 @@ function renderRoom() {
       </div>
 
       <button class="btn soft grow" style="margin-bottom:16px" data-action="go_standings">Live results &amp; standings</button>
+
+      <div class="small" style="text-align:center;margin-bottom:16px">
+        <button class="btn small ghost" data-action="open_reset" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Reset scores</button>
+      </div>
 
       <div class="label">Boards</div>
       ${items}
@@ -744,6 +765,11 @@ const actions = {
   }, 'Opening…'); },
   sheet_close() { closeSheets(); render(); },
   sheet_close_refresh() { closeSheets(); render(); },
+  open_reset() { state.sheet = 'reset'; render(); },
+  reset_confirm() { closeSheets(); busy(async () => {
+    await resetResults();
+    toast('All scores deleted');
+  }, 'Resetting…'); },
 
   create_tables(el) { state.draft.tables = Math.min(6, Math.max(1, state.draft.tables + +el.dataset.d)); render(); },
   create_boards(el) { state.draft.boards = Math.min(24, Math.max(1, state.draft.boards + +el.dataset.d)); render(); },

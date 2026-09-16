@@ -401,18 +401,20 @@ function renderHome() {
       <div class="hero">
         <span class="glyph">♣</span>
         <h1>Flinders Social Bridge</h1>
-        <p>${today} · duplicate night made easy</p>
+        <p>${today} · duplicate today made easy</p>
       </div>
       ${badge}
-      <div class="logo-wrap">
-        <h1>Set up session</h1>
-        <p>For the organiser — tables, boards &amp; pairs</p>
-        <button class="btn" style="margin-top:16px;background:var(--accent-ink);color:var(--accent)" data-action="go_create">Set up session</button>
-      </div>
-      <button class="btn ghost" data-action="join_today" ${has ? '' : 'disabled'}>
-        ${has ? `Join ${esc(title)}'s session` : 'No session yet — ask the organiser'}
+
+      <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${has ? '' : 'disabled'}>
+        ${has ? `Join today's session` : 'No session set up yet'}
       </button>
-      ${has ? `<p class="small muted" style="text-align:center;margin-top:10px">A session is ready. Tap to join and pick your table.</p>` : ''}
+      ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">${esc(title)} is ready — tap to join and pick your table.</p>`
+        : `<p class="small muted" style="text-align:center;margin-bottom:18px">The organiser sets one up below before scoring begins.</p>`}
+
+      <div class="small" style="text-align:center">
+        <button class="btn small ghost" data-action="go_create" style="width:auto;margin:0 auto">Set up session</button>
+        <div class="small muted" style="margin-top:6px">For the organiser — tables, boards &amp; pairs</div>
+      </div>
     </div>`;
 }
 

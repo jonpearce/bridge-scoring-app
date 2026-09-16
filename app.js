@@ -616,8 +616,7 @@ function renderEntry() {
       <div class="topbar">
         <button class="back" data-action="leave_entry">‹</button>
         <div style="flex:1">
-          <div style="font-weight:800;font-size:1.05rem">Table ${state.myTable}</div>
-          <div class="small muted">Board ${e.boardNum} · dealer &amp; vuln — tap to change</div>
+          <div style="font-weight:800;font-size:1.05rem">Table ${state.myTable} · Board ${e.boardNum}</div>
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn small soft" data-action="ent_prev_board" style="min-height:36px;width:auto;padding:4px 12px">‹</button>

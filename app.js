@@ -316,6 +316,7 @@ function refreshEntryMp() {
 }
 
 /* ---------- render ---------- */
+let _lastRenderedScreen = null;
 function render() {
   const fn = {
     home: renderHome, create: renderCreate, setup: renderSetup,
@@ -324,7 +325,7 @@ function render() {
   appEl.innerHTML = '';
   appEl.appendChild(frag(fn()));
   if (state.sheet) appEl.appendChild(frag(renderSheet()));
-  window.scrollTo(0, 0);
+  if (_lastRenderedScreen !== state.screen) { window.scrollTo(0, 0); _lastRenderedScreen = state.screen; }
   requestAnimationFrame(() => {
     document.querySelectorAll('input[autofocus]')?.forEach((i) => i.focus());
   });

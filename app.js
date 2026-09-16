@@ -510,6 +510,10 @@ function renderSetup() {
       <div class="pair-grid">${pairRows}</div>
 
       <button class="btn grow" data-action="save_setup">Save &amp; go to room</button>
+
+      <div class="small" style="text-align:center;margin-top:18px">
+        <button class="btn small ghost" data-action="open_reset" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Reset scores</button>
+      </div>
     </div>`;
 }
 
@@ -550,10 +554,6 @@ function renderRoom() {
       </div>
 
       <button class="btn soft grow" style="margin-bottom:16px" data-action="go_standings">Live results &amp; standings</button>
-
-      <div class="small" style="text-align:center;margin-bottom:16px">
-        <button class="btn small ghost" data-action="open_reset" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Reset scores</button>
-      </div>
 
       <div class="label">Boards</div>
       ${items}

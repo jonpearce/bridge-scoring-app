@@ -1,4 +1,4 @@
-# Bridge Scores — duplicate bridge scoring app
+# Flinders Social Bridge — duplicate bridge scoring app
 
 A phone-first web app for a club duplicate bridge evening. Up to six tables, one
 phone each. Each phone enters its table's results as boards are played; every

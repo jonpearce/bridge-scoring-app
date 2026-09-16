@@ -393,14 +393,15 @@ function renderDetailSheet() {
 /* ---------- screens ---------- */
 function renderHome() {
   const has = !!state.todaySession;
-  const title = state.todaySession?.title || 'tonight';
+  const title = state.todaySession?.title || 'today';
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   const badge = configured ? '' : `<div class="card" style="border-color:var(--gold)"><b>Not connected yet.</b><br><span class="small muted">Put your Supabase URL and key in config.js, then deploy (see README).</span></div>`;
   return `
     <div class="screen">
       <div class="hero">
         <span class="glyph">♣</span>
-        <h1>Bridge Scores</h1>
-        <p>Duplicate night made easy</p>
+        <h1>Flinders Social Bridge</h1>
+        <p>${today} · duplicate night made easy</p>
       </div>
       ${badge}
       <div class="logo-wrap">

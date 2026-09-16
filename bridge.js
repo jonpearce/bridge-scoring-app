@@ -69,7 +69,7 @@ export function makeScore(level, strain, doubled, tricks, declarer, v) {
 
   function penalty(down, vind, d) {
     const base = (() => {
-      if (d === 'No') return vind ? 100 : 50;
+      if (d === 'No') return down * (vind ? 100 : 50);
       if (!vind) {
         if (down <= 2) return down * 100 + (down === 2 ? 100 : 0);
         if (down === 3) return 500;
@@ -77,7 +77,7 @@ export function makeScore(level, strain, doubled, tricks, declarer, v) {
       } else {
         if (down === 1) return 200;
         if (down <= 3) return (down - 1) * 300 + 200;
-        return (down - 3) * 300 + 500;
+        return 800 + (down - 3) * 300;
       }
     })();
     return base * (d === 'XX' ? 2 : 1);

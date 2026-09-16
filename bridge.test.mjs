@@ -50,6 +50,17 @@ check('4SX-3 vul', makeScore(4,'S','X',7,'N',VUL), -800);
 check('5CX-2 vul', makeScore(5,'C','X',9,'N',VUL), -500);
 check('4SXX-2 nv', makeScore(4,'S','XX',8,'N',NV), -600);
 check('7NTX-1 nv', makeScore(7,'NT','X',12,'N',NV), -100);
+// Multiple undoubled undertricks (50 nv / 100 vul each)
+check('4S-2 nv', makeScore(4,'S','No',8,'N',NV), -100);
+check('4S-3 nv', makeScore(4,'S','No',7,'N',NV), -150);
+check('4S-2 vul', makeScore(4,'S','No',8,'N',VUL), -200);
+check('5S-7 nv', makeScore(5,'S','No',4,'N',NV), -350);
+check('5S-7 vul', makeScore(5,'S','No',4,'N',VUL), -700);
+// Deep doubled undertricks (vul: 200, then 300 each)
+check('4SX-4 vul', makeScore(4,'S','X',6,'N',VUL), -1100);
+check('4SX-5 vul', makeScore(4,'S','X',5,'N',VUL), -1400);
+check('4SX-5 nv', makeScore(4,'S','X',5,'N',NV), -1100);
+check('4SXX-3 vul', makeScore(4,'S','XX',7,'N',VUL), -1600);
 // EW declarer flips sign
 check('4S+0 by E (EW side, positive for EW = negative NS)', makeScore(4,'S','No',10,'E',NV), -420);
 check('1NT+0 by W nv', makeScore(1,'NT','No',7,'W',NV), -90);

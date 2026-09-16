@@ -32,7 +32,7 @@ score to every phone instantly. Source lives on **GitHub**.
 | `index.html` | single-page shell |
 | `app.js` | screens, Supabase + realtime, entry flow |
 | `bridge.js` | pure scoring + matchpoint engine (also used by tests) |
-| `bridge.test.mjs`  | 58 unit checks of the scoring engine |
+| `bridge.test.mjs`  | 67 unit checks of the scoring engine |
 | `styles.css` | large-type, paper-and-ink theme |
 | `config.js` | your Supabase URL + anon key |
 | `supabase/schema.sql` | run once in the Supabase SQL editor |

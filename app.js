@@ -203,17 +203,18 @@ async function loadSession(sess) {
 async function upsertResult() {
   const e = state.entry;
   const v = vulnFor(e.boardNum);
-  const score = e.pass ? 0 : makeScore(e.level, e.strain, e.doubled, e.tricks, e.declarer, { ns: !!v.vul_ns, ew: !!v.vul_ew });
+  const blank = entryIsBlank();
+  const score = blank ? 0 : makeScore(e.level, e.strain, e.doubled || 'No', e.tricks, e.declarer, { ns: !!v.vul_ns, ew: !!v.vul_ew });
   const row = {
     session_id: state.session.code,
     board_num: e.boardNum,
     table_num: state.myTable,
-    contract_level: e.pass ? null : e.level,
-    strain: e.pass ? null : e.strain,
-    doubled: e.pass ? 'No' : e.doubled,
-    declarer: e.pass ? null : e.declarer,
+    contract_level: blank ? null : e.level,
+    strain: blank ? null : e.strain,
+    doubled: blank ? 'No' : (e.doubled || 'No'),
+    declarer: blank ? null : e.declarer,
     open_lead: e.lead,
-    tricks: e.pass ? null : e.tricks,
+    tricks: blank ? null : e.tricks,
     score,
   };
   const { error } = await supabase.from('results').upsert(row, { onConflict: 'session_id,board_num,table_num' });
@@ -243,11 +244,22 @@ async function saveSetup() {
   await loadSession(sess);
 }
 
+async function saveBoard(bn) {
+  const b = state.boards.find((x) => x.board_num === bn);
+  if (!b) return;
+  const { error } = await supabase.from('boards').upsert({
+    session_id: state.session.code, board_num: bn, dealer: b.dealer, vul_ns: b.vul_ns, vul_ew: b.vul_ew,
+  }, { onConflict: 'session_id,board_num' });
+  if (error) throw new Error(error.message);
+  refreshEntryMp();
+  render();
+}
+
 /* ---------- entry state ---------- */
 function newEntry(boardNum, existing) {
   const e = existing
-    ? { boardNum, pass: existing.contract_level == null, level: existing.contract_level || 3, strain: normSuit(existing.strain || 'NT'), doubled: existing.doubled === 'No' ? 'No' : existing.doubled, declarer: existing.declarer || 'N', leadSuit: normSuit(existing.open_lead?.slice(0, 1)), leadRank: existing.open_lead?.slice(1), tricks: existing.tricks ?? 8, editingId: existing.id || null }
-    : { boardNum, pass: false, level: 3, strain: 'NT', doubled: 'No', declarer: 'N', leadSuit: null, leadRank: null, tricks: 9, editingId: null };
+    ? { boardNum, level: existing.contract_level ?? null, strain: existing.strain ? normSuit(existing.strain) : null, doubled: existing.contract_level != null ? (existing.doubled && existing.doubled !== 'No' ? existing.doubled : null) : null, declarer: existing.declarer ?? null, leadSuit: existing.open_lead ? normSuit(existing.open_lead.slice(0, 1)) : null, leadRank: existing.open_lead ? existing.open_lead.slice(1) : null, tricks: existing.tricks ?? null, editingId: existing.id || null }
+    : { boardNum, level: null, strain: null, doubled: null, declarer: null, leadSuit: null, leadRank: null, tricks: null, editingId: null };
   state.entry = e;
   return e;
 }
@@ -255,11 +267,14 @@ function newEntry(boardNum, existing) {
 const leadOf = (e) => (e.leadSuit && e.leadRank ? `${e.leadSuit}${e.leadRank}` : null);
 
 function entryDoneTricks() { return state.entry.level + 6; }
+const entryIsBlank = () => !state.entry.level && !state.entry.strain && !state.entry.declarer;
+const entryIsComplete = () => !!(state.entry.level && state.entry.strain && state.entry.declarer && state.entry.tricks != null);
 function entryPreview() {
   const e = state.entry;
-  if (e.pass) return { nsScore: 0, declarerSide: null, down: 0, made: 0 };
+  if (entryIsBlank()) return { nsScore: null, declarerSide: null, down: 0, made: 0 };
+  if (!entryIsComplete()) return { nsScore: null, declarerSide: null, down: 0, made: 0 };
   const v = vulnFor(e.boardNum);
-  const nsScore = makeScore(e.level, e.strain, e.doubled, e.tricks, e.declarer, { ns: !!v.vul_ns, ew: !!v.vul_ew });
+  const nsScore = makeScore(e.level, e.strain, e.doubled || 'No', e.tricks, e.declarer, { ns: !!v.vul_ns, ew: !!v.vul_ew });
   return { nsScore, declarerSide: directionSideJS(e.declarer), down: Math.max(0, e.level + 6 - e.tricks), made: Math.max(0, e.tricks - (e.level + 6)) };
 }
 
@@ -267,14 +282,15 @@ function entryPreview() {
 function refreshEntryMp() {
   if (!state.entry || !state.session) return;
   const e = state.entry;
+  if (entryIsBlank() || !entryIsComplete()) { state.entry.mp = null; return; }
   const v = vulnFor(e.boardNum);
   const mine = {
     table_num: 999,
-    contract_level: e.pass ? null : e.level,
-    strain: e.pass ? null : e.strain,
-    doubled: e.pass ? 'No' : e.doubled,
-    declarer: e.pass ? null : e.declarer,
-    tricks: e.pass ? null : e.tricks,
+    contract_level: e.level,
+    strain: e.strain,
+    doubled: e.doubled || 'No',
+    declarer: e.declarer,
+    tricks: e.tricks,
   };
   const rows = [
     ...state.results.filter((r) => r.board_num === e.boardNum && r.table_num !== state.myTable),
@@ -284,9 +300,7 @@ function refreshEntryMp() {
   const sb = scoreBoard(rows, { ns: !!v.vul_ns, ew: !!v.vul_ew });
   const mineRow = sb.rows.find((r) => r.table_num === 999);
   if (mineRow) {
-    const pts = e.pass || !e.declarer ? mineRow.points
-      : directionSideJS(e.declarer) === 'EW' ? mineRow.ewPoints
-      : mineRow.points;
+    const pts = directionSideJS(e.declarer) === 'EW' ? mineRow.ewPoints : mineRow.points;
     state.entry.mp = { points: pts, top: sb.top };
   } else state.entry.mp = null;
 }
@@ -512,7 +526,7 @@ function renderRoom() {
 
       <div class="card flush" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin-bottom:16px">
         <div class="small muted" style="font-weight:800;font-size:1.15rem;white-space:nowrap">Table ${state.myTable}</div>
-        <button class="btn small ghost" data-action="open_tables" style="padding:5px 10px;font-size:0.8rem;min-height:0">Change table</button>
+        <button class="btn small ghost" data-action="open_tables" style="width:auto;padding:5px 10px;font-size:0.8rem;min-height:0">Change table</button>
       </div>
 
       <button class="btn soft grow" style="margin-bottom:16px" data-action="go_standings">Live results &amp; standings</button>
@@ -534,26 +548,24 @@ function renderEntry() {
   const e = state.entry;
   const birth = vulnFor(e.boardNum);
   const p = entryPreview();
+  const blank = entryIsBlank();
   const showMp = e.mp;
   const leadTxt = e.leadSuit && e.leadRank ? `${strainGlyph(e.leadSuit)}${e.leadRank}` : null;
 
-  const passBtn = `
-    <button class="chip ${e.pass ? 'on' : ''}" data-action="ent_pass" style="font-size:1.1rem">Passed out</button>`;
-
   const levels = [];
   for (let l = 1; l <= 7; l++) {
-    levels.push(`<button class="chip ${!e.pass && e.level === l ? 'on' : ''} ${e.pass ? 'disabled' : ''}" data-action="ent_level" data-l="${l}">${l}</button>`);
+    levels.push(`<button class="chip ${e.level === l ? 'on' : ''}" data-action="ent_level" data-l="${l}">${l}</button>`);
   }
   const strainBtns = suits.map((s) => {
-    const on = !e.pass && s === e.strain;
+    const on = s === e.strain;
     const glyph = strainGlyph(s);
     const style = on ? '' : ` style="color:${SUIT_COLORS[s]}"`;
     return `<button class="chip suits-btn ${on ? 'on' : ''}"${style} data-action="ent_strain" data-s="${s}">${glyph}</button>`;
   }).join('');
   const doubleBtns = ['No', 'X', 'XX'].map((d) =>
-    `<button class="chip ${!e.pass && e.doubled === d ? 'on' : ''}" data-action="ent_double" data-d="${d}">${d === 'No' ? 'Undoubled' : d}</button>`).join('');
+    `<button class="chip ${e.doubled === d ? 'on' : ''}" data-action="ent_double" data-d="${d}">${d === 'No' ? 'Undoubled' : d}</button>`).join('');
   const dirBtns = ['N', 'E', 'S', 'W'].map((di) =>
-    `<button class="chip ${!e.pass && e.declarer === di ? 'on' : ''}" data-action="ent_declarer" data-d="${di}">${di}</button>`).join('');
+    `<button class="chip ${e.declarer === di ? 'on' : ''}" data-action="ent_declarer" data-d="${di}">${di}</button>`).join('');
 
   const leadSuits = ['C', 'D', 'H', 'S'].map((s) => {
     const glyph = strainGlyph(s);
@@ -562,43 +574,50 @@ function renderEntry() {
   const leadRanks = RANKS.map((rk) =>
     `<button class="chip ${e.leadRank === rk ? 'on' : ''}" data-action="ent_lead_rank" data-r="${rk}">${rk}</button>`).join('');
 
-  const sideLab = p.declarerSide ? (p.nsScore >= 0 ? 'N/S' : 'E/W') : '';
+  const sideLab = p.declarerSide ? (p.nsScore != null && p.nsScore >= 0 ? 'N/S' : 'E/W') : '';
+  const dealerBtns = ['N', 'E', 'S', 'W'].map((d) =>
+    `<button class="chip ${birth.dealer === d ? 'on' : ''}" data-action="ent_dealer" data-d="${d}">${d}</button>`).join('');
+  const vulnBtns = [
+    { ns: false, ew: false, label: 'Neither' },
+    { ns: true, ew: false, label: 'NS' },
+    { ns: false, ew: true, label: 'EW' },
+    { ns: true, ew: true, label: 'Both' },
+  ].map((o) => {
+    const on = !!birth.vul_ns === o.ns && !!birth.vul_ew === o.ew;
+    return `<button class="chip ${on ? 'on' : ''}" data-action="ent_vuln" data-ns="${o.ns}" data-ew="${o.ew}">${o.label}</button>`;
+  }).join('');
 
   return `
     <div class="screen">
       <div class="topbar">
         <button class="back" data-action="leave_entry">‹</button>
         <div style="flex:1">
-          <div style="font-weight:800;font-size:1.15rem">Enter result</div>
-          <div class="small muted" style="display:flex;gap:14px">
-            <button class="btn small soft" data-action="ent_prev_board" style="min-height:30px;width:auto;padding:4px 12px">‹ Board ${e.boardNum - 1}</button>
-            <span style="align-self:center">Table ${state.myTable}</span>
-            <button class="btn small soft" data-action="ent_next_board2" style="min-height:30px;width:auto;padding:4px 12px">Board ${e.boardNum + 1} ›</button>
-          </div>
+          <div style="font-weight:800;font-size:1.05rem">Table ${state.myTable}</div>
+          <div class="small muted">Board ${e.boardNum} · dealer &amp; vuln — tap to change</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn small soft" data-action="ent_prev_board" style="min-height:36px;width:auto;padding:4px 12px">‹</button>
+          <button class="btn small soft" data-action="ent_next_board2" style="min-height:36px;width:auto;padding:4px 12px">›</button>
         </div>
       </div>
 
-      <div class="board-hero" style="margin-bottom:16px">
-        <div><div class="bn">Board ${e.boardNum}</div>
-          <div class="sub"><span class="dealer-chip">Dealer ${birth.dealer}</span> <span class="vul-badge">${esc(vulnerabilityText({ ns: !!birth.vul_ns, ew: !!birth.vul_ew }))}</span></div>
-        </div>
-        <button class="btn small" style="background:rgba(255,255,255,0.18);color:#fff;box-shadow:none" data-action="ent_sheetboards">Boards</button>
+      <div class="entry-block" style="margin-bottom:14px">
+        <div class="label" style="margin-top:0">Dealer</div>
+        <div class="chips">${dealerBtns}</div>
+        <div class="label">Vulnerability</div>
+        <div class="chips">${vulnBtns}</div>
       </div>
 
-      <div class="entry-section">
-        <span class="label">Was there a bid?</span>
-        ${passBtn}
-      </div>
-
-      <div class="entry-block" style="${e.pass ? 'opacity:0.38;pointer-events:none' : ''}">
+      <div class="entry-block">
         <div class="label" style="margin-top:0">Contract level</div>
         <div class="chips" style="grid-auto-flow:column;grid-auto-columns:1fr">${levels}</div>
         <div class="label">Suit</div>
         <div class="chips strains">${strainBtns}</div>
-        <div class="label">Doubled?</div>
-        <div class="chips">${doubleBtns}</div>
-        <div class="label">Who declared?</div>
-        <div class="dir-grid">${dirBtns}</div>
+        ${e.level ? `
+          <div class="label">Doubled?</div>
+          <div class="chips">${doubleBtns}</div>
+          <div class="label">Who declared?</div>
+          <div class="dir-grid">${dirBtns}</div>` : ''}
       </div>
 
       <div class="entry-block">
@@ -613,11 +632,12 @@ function renderEntry() {
       <div class="entry-section">
         <span class="label">Tricks won</span>
         <div class="stepper">
-          <button class="step-btn" data-action="ent_tricks" data-d="-1" ${e.pass ? 'disabled' : ''}>−</button>
-          <div><span class="step-val">${e.pass ? '—' : e.tricks}</span><span class="step-lab">of 13</span></div>
-          <button class="step-btn" data-action="ent_tricks" data-d="1" ${e.pass ? 'disabled' : ''}>+</button>
+          <button class="step-btn" data-action="ent_tricks" data-d="-1">−</button>
+          <div><span class="step-val">${e.tricks == null ? '—' : e.tricks}</span><span class="step-lab">of 13</span></div>
+          <button class="step-btn" data-action="ent_tricks" data-d="1">+</button>
         </div>
-        <div class="tricks-note muted">${e.pass ? '' : noteForEntry(e)}</div>
+        <div class="tricks-note muted">${e.tricks == null ? '' : noteForEntry(e)}</div>
+        ${blank ? '<div class="small muted" style="text-align:center;margin-top:6px">Leave everything blank if the hand was passed out.</div>' : ''}
       </div>
 
       <div class="score-preview">
@@ -625,7 +645,7 @@ function renderEntry() {
           <div class="who">${sideLab ? `${sideLab} score` : 'Score'}</div>
           ${showMp ? `<div class="small" style="opacity:0.85">${showMp.points} of ${showMp.top} matchpoints</div>` : ''}
         </div>
-        <div class="amt">${e.pass ? '0' : fmtScore(p.nsScore)}</div>
+        <div class="amt">${p.nsScore == null ? (blank ? '0' : '') : fmtScore(p.nsScore)}</div>
       </div>
 
       <button class="btn grow" data-action="ent_save" style="min-height:64px;font-size:1.25rem">Save result</button>
@@ -770,31 +790,39 @@ const actions = {
   ent_next_board2() {
     if (state.entry.boardNum < state.session.num_boards) { state.entry.boardNum++; refreshEntryMp(); render(); }
   },
-  ent_sheetboards() { state.sheet = 'detail'; state.sheet.detail = state.entry.boardNum; render(); },
   leave_entry() { enterRoom(); },
 
-  ent_pass() {
-    state.entry.pass = !state.entry.pass;
-    state.entry.tricks = state.entry.pass ? null : entryDoneTricks();
-    refreshEntryMp(); render();
-  },
-  ent_level(el) { const l = +el.dataset.l; state.entry.level = l; state.entry.tricks = entryDoneTricks(); refreshEntryMp(); render(); },
+  ent_level(el) { const l = +el.dataset.l; state.entry.level = l; if (state.entry.tricks == null) state.entry.tricks = entryDoneTricks(); refreshEntryMp(); render(); },
   ent_strain(el) { state.entry.strain = el.dataset.s; refreshEntryMp(); render(); },
   ent_double(el) { state.entry.doubled = el.dataset.d; refreshEntryMp(); render(); },
   ent_declarer(el) { state.entry.declarer = el.dataset.d; refreshEntryMp(); render(); },
   ent_lead_suit(el) { state.entry.leadSuit = (state.entry.leadSuit === el.dataset.s) ? null : el.dataset.s; render(); },
   ent_lead_rank(el) { state.entry.leadRank = (state.entry.leadRank === el.dataset.r) ? null : el.dataset.r; render(); },
   ent_clear_lead() { state.entry.leadSuit = null; state.entry.leadRank = null; render(); },
+  ent_dealer(el) {
+    const bn = state.entry.boardNum;
+    const b = state.boards.find((x) => x.board_num === bn);
+    if (b) b.dealer = el.dataset.d; else state.boards.push({ session_id: state.session.code, board_num: bn, dealer: el.dataset.d, vul_ns: boardInfo(bn).ns, vul_ew: boardInfo(bn).ew });
+    busy(async () => { await saveBoard(bn); }, 'Saving…');
+  },
+  ent_vuln(el) {
+    const bn = state.entry.boardNum;
+    const b = state.boards.find((x) => x.board_num === bn);
+    const cur = b || { session_id: state.session.code, board_num: bn, dealer: boardInfo(bn).dealer, vul_ns: boardInfo(bn).ns, vul_ew: boardInfo(bn).ew };
+    cur.vul_ns = el.dataset.ns === 'true';
+    cur.vul_ew = el.dataset.ew === 'true';
+    if (!b) state.boards.push(cur);
+    busy(async () => { await saveBoard(bn); }, 'Saving…');
+  },
   ent_tricks(el) {
-    if (state.entry.pass) return;
-    let t = state.entry.tricks + +el.dataset.d;
+    let t = (state.entry.tricks ?? entryDoneTricks()) + +el.dataset.d;
     t = Math.min(13, Math.max(0, t));
     state.entry.tricks = t; refreshEntryMp(); render();
   },
   ent_save() {
     const e = state.entry;
     if (!state.myTable) { state.sheet = 'tables'; render(); return; }
-    if (!e.pass && (!e.strain || !e.declarer)) {
+    if (!entryIsBlank() && (!e.strain || !e.declarer)) {
       toast('Choose the contract and who declared first');
       return;
     }

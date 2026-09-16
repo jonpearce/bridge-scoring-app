@@ -24,9 +24,12 @@
   --base-font:   20px;
 }
 
+button, .chip, .board-item, .step-btn, [data-action] { touch-action: manipulation; }
+
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
-html { font-size: var(--base-font); }
+html { font-size: var(--base-font); -webkit-text-size-adjust: 100%; }
+html, body { overscroll-behavior-y: none; }
 
 body {
   margin: 0;
@@ -175,17 +178,17 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing:
 .back:active { background: var(--accent); color: var(--accent-ink); }
 
 /* ---------- Home ---------- */
-.hero { text-align: center; padding: 46px 20px 10px; }
+.hero { text-align: center; padding: 12px 20px 6px; }
 .hero .glyph {
-  font-size: 3.4rem; color: var(--accent);
-  display: block; margin-bottom: 6px;
+  font-size: 2.2rem; color: var(--accent);
+  display: block; margin-bottom: 2px;
 }
-.hero h1 { font-size: 2.3rem; margin: 0 0 8px; }
-.hero p { color: var(--ink-soft); margin: 0 0 26px; font-size: 1.05rem; }
+.hero h1 { font-size: 1.7rem; margin: 0 0 2px; }
+.hero p { color: var(--ink-soft); margin: 0 0 14px; font-size: 0.95rem; }
 
-.logo-wrap { background: var(--accent); border-radius: var(--radius); padding: 22px 20px; margin-bottom: 26px; }
-.logo-wrap h1 { color: var(--accent-ink); font-size: 2rem; margin: 0; }
-.logo-wrap p { color: #cfe3e0; margin: 6px 0 0; }
+.logo-wrap { background: var(--accent); border-radius: var(--radius); padding: 16px 20px; margin-bottom: 18px; }
+.logo-wrap h1 { color: var(--accent-ink); font-size: 1.7rem; margin: 0; }
+.logo-wrap p { color: #cfe3e0; margin: 4px 0 0; }
 
 /* ---------- Screens ---------- */
 .screen { animation: rise 0.18s ease; }
@@ -286,10 +289,12 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing:
 .score-preview .amt { font-family: var(--font-display); font-weight: 700; font-size: 2rem; line-height: 1; }
 
 /* Leading a card picker */
-.lead-pick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 8px; }
-.lead-pick .chip { min-height: 64px; font-size: 1.5rem; font-family: Georgia, serif; }
-.ranks { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 10px; }
+.lead-pick { margin-top: 8px; }
+.lead-pick .chip { font-family: Georgia, serif; }
+.ranks { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .ranks .chip { min-height: 52px; font-size: 1.1rem; }
+.suits { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.suits .chip { min-height: 56px; font-size: 1.4rem; }
 
 /* ---------- Board summary (full board results of the newly entered board) ---------- */
 .summary-row { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -344,7 +349,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing:
 .vuln-cell .chip { min-height: 66px; flex-direction: column; gap: 4px; font-size: 0.95rem; }
 .vuln-cell .bn { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; line-height: 1; }
 .vuln-cell .st { font-size: 0.75rem; color: var(--ink-soft); }
-.vuln-cell.on .st { color: var(--accent-ink); }
+.vuln-cell .chip.on .st { color: var(--accent-ink); font-weight: 700; opacity: 0.95; }
 
 /* ---------- Modal / sheet ---------- */
 .sheet-back {

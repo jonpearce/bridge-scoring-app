@@ -6,7 +6,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
 import {
   boardInfo, makeScore, scoreBoard, standings,
-  displayContract, vulnerabilityText,
+  displayContract, vulnerabilityText, strainGlyph,
 } from './bridge.js';
 
 /* ---------- tiny helpers ---------- */
@@ -625,8 +625,10 @@ function renderEntry() {
 
       <div class="entry-block">
         <div class="label" style="margin-top:0">Opening lead</div>
-        <div class="lead-pick">${leadSuits}</div>
-        <div class="ranks">${leadRanks}</div>
+        <div class="lead-pick">
+          <div class="ranks">${leadRanks}</div>
+          <div class="suits" style="margin-top:8px">${leadSuits}</div>
+        </div>
         ${leadTxt ? `<div class="small" style="margin-top:8px;text-align:center">Leading: <b style="color:${SUIT_COLORS[e.leadSuit]};font-size:1.2rem">${leadTxt}</b> <button class="btn small soft" data-action="ent_clear_lead" style="width:auto;padding:4px 10px">clear</button></div>` : '<div class="small muted" style="margin-top:8px;text-align:center">Skip if you prefer</div>'}
       </div>
 

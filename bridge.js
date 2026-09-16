@@ -150,9 +150,11 @@ export function standings(byBoard, allResults) {
     const mine = sb && sb.rows.find((x) => x.table_num === r.table_num);
     if (!mine) return;
     const pts = r.side === 'EW' ? mine.ewPoints : mine.points;
-    const cur = acc.get(label) || { points: 0, max: 0, played: 0 };
+    const score = r.side === 'EW' ? -mine.nsScore : mine.nsScore;
+    const cur = acc.get(label) || { points: 0, max: 0, played: 0, score: 0 };
     cur.points += pts;
     cur.max += sb.top;
+    cur.score += score;
     cur.played += 1;
     acc.set(label, cur);
   });

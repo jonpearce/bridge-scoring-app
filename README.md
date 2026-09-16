@@ -60,9 +60,9 @@ build command empty) or, from the CLI:
 vercel    # deploy once — no build step, the site is static
 ```
 
-That's it. Everyone opens the same URL on their phone. One person taps
-**New session** to start the evening, everyone else taps **Join an existing
-room** and types the big 6-letter room code that appears on the host's phone.
+That's it. Everyone opens the same URL on their phone. The organiser taps
+**Set up session** to start a session, everyone else taps **Join** once a
+session is set up, then each player picks their table.
 
 ### Testing the scoring engine locally (no browser needed)
 

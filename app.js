@@ -38,14 +38,13 @@ const supabase = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : nu
 /* ---------- state ---------- */
 const state = {
   screen: 'home',
-  sheet: null,                    // 'join' | { done: {boardNum}, detail: {boardNum}, tables }
-  recent: [],
+  sheet: null,                    // { done: {boardNum}, detail: {boardNum}, tables }
+  todaySession: null,             // the single session set up for today
   session: null,
   boards: [],
   pairs: [],
   results: [],
   myTable: null,                  // pinned table number for this phone
-  joinCode: '',
   draft: {
     tables: 6,
     boards: 24,
@@ -58,8 +57,6 @@ const state = {
 };
 
 const ls = {
-  get recent() { try { return JSON.parse(localStorage.getItem('bridge:recent') || '[]'); } catch { return []; } },
-  set recent(v) { localStorage.setItem('bridge:recent', JSON.stringify(v)); },
   pin(code) { return localStorage.getItem(`bridge:pin:${code}`); },
   setPin(code, t) { localStorage.setItem(`bridge:pin:${code}`, t); },
   clearPin(code) { localStorage.removeItem(`bridge:pin:${code}`); },
@@ -170,6 +167,19 @@ async function openSession(code) {
   return data;
 }
 
+// The single session for today. With one room per evening, the most recent
+// session that was set up on the same local day is "the" session.
+async function todaySession() {
+  if (!configured) return null;
+  const { data, error } = await supabase.from('sessions')
+    .select().order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(error.message);
+  const s = data || null;
+  if (!s) return null;
+  const d = new Date(s.created_at), now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate() ? s : null;
+}
+
 async function loadSession(sess) {
   state.session = sess;
   const [boards, pairs, results] = await Promise.all([
@@ -186,9 +196,6 @@ async function loadSession(sess) {
   normalizeResults();
   state.myTable = state.myTable ?? (Number(ls.pin(sess.code)) || (sess.num_tables === 1 ? 1 : null));
   state.standingsBoard = null;
-  const rec = ls.recent.filter((x) => x.code !== sess.code);
-  rec.unshift({ code: sess.code, title: sess.title });
-  ls.recent = rec.slice(0, 8);
   refreshEntryMp();
   subscribe(sess.code);
 }
@@ -300,15 +307,6 @@ function render() {
 
 function renderSheet() {
   const s = state.sheet;
-  if (s === 'join') return `
-    <div class="sheet-back" data-action="sheet_close"><div class="sheet" data-stop="1">
-      <div class="label">Join an evening — room code</div>
-      <div class="small muted" style="margin:-6px 0 12px">Every phone enters the same code. Big letters only.</div>
-      <div class="code-input-inline">
-        <input class="code-box" data-action="join_input" autofocus maxlength="6" placeholder="AAA 000" value="${esc(state.joinCode)}" />
-      </div>
-      <button class="btn grow" data-action="join_submit">Join</button>
-    </div></div>`;
   if (s === 'tables') {
     const opts = Array.from({ length: state.session.num_tables }, (_, i) => i + 1)
       .map((t) => `<div class="chip ${t === state.myTable ? 'on' : ''}" data-action="pin_table" data-t="${t}">Table ${t}</div>`).join('');
@@ -383,7 +381,8 @@ function renderDetailSheet() {
 
 /* ---------- screens ---------- */
 function renderHome() {
-  const rec = ls.recent;
+  const has = !!state.todaySession;
+  const title = state.todaySession?.title || 'tonight';
   const badge = configured ? '' : `<div class="card" style="border-color:var(--gold)"><b>Not connected yet.</b><br><span class="small muted">Put your Supabase URL and key in config.js, then deploy (see README).</span></div>`;
   return `
     <div class="screen">
@@ -394,18 +393,14 @@ function renderHome() {
       </div>
       ${badge}
       <div class="logo-wrap">
-        <h1>Start a new evening</h1>
-        <p>Set up tables, boards &amp; pairs</p>
-        <button class="btn" style="margin-top:16px;background:var(--accent-ink);color:var(--accent)" data-action="go_create">New session</button>
+        <h1>Set up session</h1>
+        <p>For the organiser — tables, boards &amp; pairs</p>
+        <button class="btn" style="margin-top:16px;background:var(--accent-ink);color:var(--accent)" data-action="go_create">Set up session</button>
       </div>
-      <button class="btn ghost" data-action="open_join">Join an existing room</button>
-      ${rec.length ? `
-        <div class="label" style="margin-top:26px">Recent rooms</div>
-        ${rec.slice(0, 4).map((r) => `
-          <button class="board-item" data-action="reopen" data-code="${esc(r.code)}">
-            <span class="num">${esc(r.title || 'Room')}</span>
-            <span class="meta"><span class="tiny">Room code</span>${esc(r.code)}</span>
-          </button>`).join('')}` : ''}
+      <button class="btn ghost" data-action="join_today" ${has ? '' : 'disabled'}>
+        ${has ? `Join ${esc(title)}'s session` : 'No session yet — ask the organiser'}
+      </button>
+      ${has ? `<p class="small muted" style="text-align:center;margin-top:10px">A session is ready. Tap to join and pick your table.</p>` : ''}
     </div>`;
 }
 
@@ -713,7 +708,7 @@ function renderStandings() {
         ${rank.length ? rank.map((s) => `
           <div class="rank-row ${s.rank === 1 ? 'first' : ''}">
             <span class="place">${s.rank}</span>
-            <span class="who">${esc(s.label)}<span class="small muted" style="display:block;font-weight:400">${s.played} board${s.played === 1 ? '' : 's'}</span></span>
+            <span class="who">${esc(s.label)}<span class="small muted" style="display:block;font-weight:400">${s.played} board${s.played === 1 ? '' : 's'} · total ${fmtScore(s.score)}</span></span>
             <span class="pts"><span class="big">${s.points}</span> <span class="pct">· ${s.pct}%</span></span>
           </div>`).join('')
         : '<div class="card">No results yet. Scores appear here live as tables enter them.</div>'}
@@ -727,12 +722,23 @@ function renderStandings() {
 
 /* ---------- action dispatch ---------- */
 const actions = {
-  go_home() { closeSheets(); state.screen = 'home'; render(); },
-  go_create() { closeSheets(); state.draft.tables = 6; state.draft.boards = 24; state.screen = 'create'; render(); },
-  open_join() { state.sheet = 'join'; state.joinCode = ''; render(); },
-  join_input(el) { state.joinCode = el.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); el.value = state.joinCode; },
-  join_submit() { closeSheets(); busy(async () => { await openSession(state.joinCode); enterRoom(); }, 'Joining…'); },
-  reopen(el) { busy(async () => { await openSession(el.dataset.code); enterRoom(); }, 'Opening…'); },
+  go_home() { closeSheets(); state.screen = 'home'; render(); refreshToday(); },
+  join_today() { closeSheets(); busy(async () => {
+    state.todaySession = state.todaySession || await todaySession();
+    if (!state.todaySession) return toast('No session has been set up yet');
+    await loadSession(state.todaySession);
+    enterRoom();
+  }, 'Joining…'); },
+  go_create() { closeSheets(); busy(async () => {
+    state.todaySession = await todaySession();
+    if (state.todaySession) {
+      await loadSession(state.todaySession);
+      updateDraftFromSession();
+      state.screen = 'setup'; render();
+    } else {
+      state.draft.tables = 6; state.draft.boards = 24; state.screen = 'create'; render();
+    }
+  }, 'Opening…'); },
   sheet_close() { closeSheets(); render(); },
   sheet_close_refresh() { closeSheets(); render(); },
 
@@ -767,11 +773,13 @@ const actions = {
     closeSheets(); enterRoom();
   },
   open_entry_next() {
+    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
     const bn = nextBoardFor(state.myTable, computeBoards());
     newEntry(bn, state.results.find((r) => r.board_num === bn && r.table_num === state.myTable));
     state.screen = 'entry'; render();
   },
   open_board(el) {
+    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
     const bn = +el.dataset.bn;
     newEntry(bn, state.results.find((r) => r.board_num === bn && r.table_num === state.myTable));
     state.screen = 'entry'; render();
@@ -805,6 +813,7 @@ const actions = {
   },
   ent_save() {
     const e = state.entry;
+    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
     if (!e.pass && (!e.strain || !e.declarer)) {
       toast('Choose the contract and who declared first');
       return;
@@ -832,6 +841,7 @@ const actions = {
       return;
     }
     const bn = state.sheet.done + 1;
+    if (!state.myTable) { state.sheet = 'tables'; render(); return; }
     newEntry(bn, state.results.find((r) => r.board_num === bn && r.table_num === state.myTable));
     state.sheet = null; state.screen = 'entry'; render();
   },
@@ -885,16 +895,16 @@ document.addEventListener('click', (ev) => {
 });
 
 /* ---------- boot ---------- */
+async function refreshToday() {
+  if (!configured) return;
+  try { state.todaySession = await todaySession(); } catch (e) { state.todaySession = null; }
+  if (state.screen === 'home') render();
+}
+
 (async function boot() {
   if (!configured) { render(); return; }
-  // If currently a session was open, restore it
-  const last = ls.recent[0];
-  if (last) {
-    try {
-      const s = await openSession(last.code);
-      state.myTable = Number(ls.pin(s.code)) || (s.num_tables === 1 ? 1 : null);
-      state.screen = 'room';
-    } catch (e) { state.screen = 'home'; }
-  }
+  await refreshToday();
   render();
+  // Poll so players' "Join" button appears once the organiser has set up.
+  setInterval(() => { if (state.screen === 'home') refreshToday(); }, 15000);
 })();

@@ -46,7 +46,7 @@ const state = {
   boards: [],
   results: [],
   name: '',                       // this pair's name, tagged on every result
-  side: 'NS',                     // this pair sits N/S or E/W for the session
+  side: '',                       // '', 'NS' or 'EW' — chosen on the first screen
   draft: {
     boards: 24,
     vuln: {},                     // boardNum -> {ns, ew}
@@ -59,7 +59,7 @@ const state = {
 const ls = {
   name() { return localStorage.getItem('bridge:name') || ''; },
   setName(n) { localStorage.setItem('bridge:name', n); },
-  side() { return localStorage.getItem('bridge:side') || 'NS'; },
+  side() { return localStorage.getItem('bridge:side') || ''; },
   setSide(s) { localStorage.setItem('bridge:side', s); },
   club() { return localStorage.getItem('bridge:club') || ''; },
   setClub(c) { localStorage.setItem('bridge:club', c); },
@@ -361,7 +361,7 @@ function renderDoneSheet() {
         <div class="summary-row${mine ? ' highlight' : ''}">
           <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}</div>
           <div style="text-align:right">
-            <div style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${r.declarer}` : ''}</div>
+            <div style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${esc(r.declarer)}` : ''}</div>
             <div class="small muted">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${best && !mine ? ' · <b>best</b>' : ''}</div>
           </div>
           <div style="font-weight:800;font-size:1.1rem;min-width:58px;text-align:right">${fmtScore(r.ownScore)}</div>
@@ -384,12 +384,12 @@ function renderDetailSheet() {
         <h2 class="screen-title">Board ${bn}</h2>
         <button class="btn small soft" data-action="sheet_close_refresh">Close</button>
       </div>
-      <div class="muted" style="margin-bottom:12px">Dealer ${v.dealer} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
+      <div class="muted" style="margin-bottom:12px">Dealer ${esc(v.dealer)} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length === 0 ? '<div class="card">No results yet on this board.</div>' : `
       ${rows.slice().sort((a, b) => b.points - a.points).map((r) => `
         <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
           <span class="t">${esc(r.pair || '—')}</span>
-          <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${r.declarer}` : ''}</span>
+          <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${esc(r.declarer)}` : ''}</span>
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
           <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
           <span class="mp ${r.points === sb.top ? 'hi' : ''}">${r.points} MP</span>
@@ -402,7 +402,11 @@ function renderHome() {
   const has = !!state.todaySession;
   const today = new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   const badge = configured ? '' : `<div class="card" style="border-color:var(--gold)"><b>Not connected yet.</b><br><span class="small muted">Put your Supabase URL and key in config.js, then deploy (see README).</span></div>`;
-  const ready = has && !!state.name.trim();
+  const ready = has && !!state.name.trim() && !!state.side;
+  const joinLabel = !has ? 'No session set up yet'
+    : ready ? `Join today's session`
+    : !state.name.trim() ? 'Enter your pair name'
+    : 'Choose N/S or E/W';
   return `
     <div class="screen">
       <div class="hero">
@@ -415,7 +419,7 @@ function renderHome() {
       <div class="card">
         <span class="label" style="margin-top:0">Your pair name</span>
         <input class="field" data-action="name_input" data-enter="blur" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
-        <span class="label">We sit</span>
+        <span class="label">We will be sitting:</span>
         <div class="chips">
           <button class="chip ${state.side === 'NS' ? 'on' : ''}" data-action="side_set" data-s="NS">N/S</button>
           <button class="chip ${state.side === 'EW' ? 'on' : ''}" data-action="side_set" data-s="EW">E/W</button>
@@ -423,7 +427,7 @@ function renderHome() {
       </div>
 
       <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${ready ? '' : 'disabled'}>
-        ${has ? (ready ? `Join today's session` : 'Enter your pair name') : 'No session set up yet'}
+        ${joinLabel}
       </button>
       ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">Tap to join and enter your scores.</p>`
         : `<p class="small muted" style="text-align:center;margin-bottom:18px">The organiser sets one up below before scoring begins.</p>`}
@@ -506,7 +510,7 @@ function renderRoom() {
         <span class="meta">
           ${r
             ? `<span style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</span>` +
-              (r.declarer ? ` · ${r.declarer}` : '') +
+              (r.declarer ? ` · ${esc(r.declarer)}` : '') +
               `<span class="tiny">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${mine ? ` · ${mine.points}/${sb.top} MP` : ''}</span>`
             : 'Tap to enter score'}
         </span>
@@ -621,7 +625,7 @@ function renderEntry() {
           <div class="ranks">${leadRanks}</div>
           <div class="suits" style="margin-top:8px">${leadSuits}</div>
         </div>
-        ${leadTxt ? `<div class="small" style="margin-top:8px;text-align:center">Leading: <b style="color:${SUIT_COLORS[e.leadSuit]};font-size:1.2rem">${leadTxt}</b> <button class="btn small soft" data-action="ent_clear_lead" style="width:auto;padding:4px 10px">clear</button></div>` : '<div class="small muted" style="margin-top:8px;text-align:center">Skip if you prefer</div>'}
+        ${leadTxt ? `<div class="small" style="margin-top:8px;text-align:center">Leading: <b style="color:${SUIT_COLORS[e.leadSuit]};font-size:1.2rem">${esc(leadTxt)}</b> <button class="btn small soft" data-action="ent_clear_lead" style="width:auto;padding:4px 10px">clear</button></div>` : '<div class="small muted" style="margin-top:8px;text-align:center">Skip if you prefer</div>'}
       </div>
 
       <div class="entry-section">
@@ -673,7 +677,7 @@ function renderStandings() {
     const info = bInfo[bn];
     const rows = info ? info.rows.slice().sort((a, b) => b.points - a.points) : [];
     boardsBody = `
-      <div class="small muted" style="margin:-6px 0 10px">Dealer ${v.dealer} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
+      <div class="small muted" style="margin:-6px 0 10px">Dealer ${esc(v.dealer)} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length ? rows.map((r) => `
         <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
           <span class="t">${esc(r.pair || '—')}</span>
@@ -734,6 +738,7 @@ const actions = {
   side_set(el) { state.side = el.dataset.s; ls.setSide(el.dataset.s); render(); },
   join_today() { closeSheets(); busy(async () => {
     if (!state.name.trim()) return toast('Enter your pair name first');
+    if (!state.side) return toast('Choose N/S or E/W first');
     state.todaySession = state.todaySession || await todaySession();
     if (!state.todaySession) return toast('No session has been set up yet');
     await loadSession(state.todaySession);

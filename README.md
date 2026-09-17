@@ -34,7 +34,7 @@ score to every phone instantly. Source lives on **GitHub**.
 | `bridge.js` | pure scoring + matchpoint engine (also used by tests) |
 | `bridge.test.mjs`  | 67 unit checks of the scoring engine |
 | `styles.css` | large-type, paper-and-ink theme |
-| `config.js` | your Supabase URL + anon key |
+| `config.js` | your Supabase URL + anon key, and the shared club word |
 | `supabase/schema.sql` | run once in the Supabase SQL editor |
 
 ---
@@ -48,10 +48,13 @@ score to every phone instantly. Source lives on **GitHub**.
 2. Open **SQL Editor → New query**, paste the whole contents of
    `supabase/schema.sql`, and run it. This creates the database tables,
    row-level security, and turns on Realtime for the results.
-3. In **Project Settings → API**, copy:
+3. Pick a **club word** (a single word players type to get in). Put it in
+   `config.js` (`CLUB_CODE`) and in the `club_ok()` function in
+   `supabase/schema.sql`, then re-run the SQL.
+4. In **Project Settings → API**, copy:
    - **Project URL**, and
    - the **anon** public key.
-4. Paste both into `config.js` (replacing the `PASTE_…` placeholders).
+5. Paste both into `config.js` (replacing the `PASTE_…` placeholders).
 
 ### 2. GitHub + Vercel (the hosting)
 
@@ -99,9 +102,12 @@ python3 -m http.server 8000      # then open localhost:8000 on your phone
 
 ## Notes & trade-offs
 
-- **Security:** the app trusts the anon key (fine for a friendly club app). To
-  harden it for public deployment, add auth and tighten the RLS policies in
-  `schema.sql`.
+- **Security:** the app is hidden behind a shared **club word** typed once per
+  device. It is also sent as the `x-club-code` header, and the RLS policies
+  only accept writes that carry it, so strangers who find the URL can't post
+  results through the API. This is a friendly-club deterrent, not
+  password-grade — the word ships in the page source. Reads stay open because
+  Realtime needs them.
 - **Matchpoints** are plain within-board comparisons (`avLex`). Boards played at
   unequal numbers of pairs don't get a Neuberg adjustment (club use is fine).
 - Each pair has one result per board (keyed by pair name), so last write wins

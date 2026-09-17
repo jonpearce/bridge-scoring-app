@@ -3,7 +3,7 @@
 //  Phone-first, large type, real-time collation via Supabase.
 // ═══════════════════════════════════════════════════════════════
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { SUPABASE_URL, SUPABASE_ANON_KEY } from './config.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, CLUB_CODE } from './config.js';
 import {
   boardInfo, makeScore, scoreBoard, standings,
   displayContract, vulnerabilityText, strainGlyph,
@@ -33,7 +33,9 @@ const randomCode = () => Array.from({ length: 6 }, () => CODE_ALPHABET[Math.floo
 
 /* ---------- Supabase ---------- */
 const configured = SUPABASE_URL.startsWith('http') && !SUPABASE_ANON_KEY.startsWith('PASTE');
-const supabase = configured ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+const supabase = configured
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { headers: { 'x-club-code': CLUB_CODE } } })
+  : null;
 
 /* ---------- state ---------- */
 const state = {
@@ -59,7 +61,12 @@ const ls = {
   setName(n) { localStorage.setItem('bridge:name', n); },
   side() { return localStorage.getItem('bridge:side') || 'NS'; },
   setSide(s) { localStorage.setItem('bridge:side', s); },
+  club() { return localStorage.getItem('bridge:club') || ''; },
+  setClub(c) { localStorage.setItem('bridge:club', c); },
 };
+
+// The app is hidden until the club word is entered on this device.
+const clubLocked = () => !!CLUB_CODE && ls.club() !== CLUB_CODE;
 
 /* ---------- realtime ---------- */
 let chan = null;
@@ -288,6 +295,13 @@ function refreshEntryMp() {
 /* ---------- render ---------- */
 let _lastRenderedScreen = null;
 function render() {
+  if (clubLocked()) {
+    appEl.innerHTML = '';
+    appEl.appendChild(frag(renderGate()));
+    if (_lastRenderedScreen !== 'gate') { window.scrollTo(0, 0); _lastRenderedScreen = 'gate'; }
+    requestAnimationFrame(() => document.getElementById('club-input')?.focus());
+    return;
+  }
   const fn = {
     home: renderHome, create: renderCreate, setup: renderSetup,
     room: renderRoom, entry: renderEntry, standings: renderStandings,
@@ -299,6 +313,20 @@ function render() {
   requestAnimationFrame(() => {
     document.querySelectorAll('input[autofocus]')?.forEach((i) => i.focus());
   });
+}
+
+function renderGate() {
+  return `
+    <div class="hero">
+      <span class="glyph">♣</span>
+      <h1>Flinders Bridge</h1>
+      <p>Type the club word to come in</p>
+    </div>
+    <div class="card">
+      <span class="label" style="margin-top:0">Club word</span>
+      <input id="club-input" class="field" type="text" placeholder="Club word" autocomplete="off" autocapitalize="none" autocorrect="off" />
+      <button class="btn grow" data-action="club_submit">Enter</button>
+    </div>`;
 }
 
 function renderSheet() {
@@ -372,7 +400,6 @@ function renderDetailSheet() {
 /* ---------- screens ---------- */
 function renderHome() {
   const has = !!state.todaySession;
-  const title = state.todaySession?.title || 'today';
   const today = new Date().toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   const badge = configured ? '' : `<div class="card" style="border-color:var(--gold)"><b>Not connected yet.</b><br><span class="small muted">Put your Supabase URL and key in config.js, then deploy (see README).</span></div>`;
   const ready = has && !!state.name.trim();
@@ -398,7 +425,7 @@ function renderHome() {
       <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${ready ? '' : 'disabled'}>
         ${has ? (ready ? `Join today's session` : 'Enter your pair name') : 'No session set up yet'}
       </button>
-      ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">${esc(title)} is ready — tap to join and enter your scores.</p>`
+      ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">Tap to join and enter your scores.</p>`
         : `<p class="small muted" style="text-align:center;margin-bottom:18px">The organiser sets one up below before scoring begins.</p>`}
 
       <div class="small" style="text-align:center">
@@ -690,6 +717,17 @@ function renderStandings() {
 
 /* ---------- action dispatch ---------- */
 const actions = {
+  club_submit() {
+    const v = (document.getElementById('club-input')?.value || '').trim();
+    if (CLUB_CODE && v.toLowerCase() === CLUB_CODE.toLowerCase()) {
+      ls.setClub(CLUB_CODE);
+      state.screen = 'home';
+      render();
+      refreshToday();
+    } else {
+      toast('That word is not right');
+    }
+  },
   go_home() { closeSheets(); state.screen = 'home'; render(); refreshToday(); },
   name_input(el) { state.name = el.value; ls.setName(el.value); },
   side_set(el) { state.side = el.dataset.s; ls.setSide(el.dataset.s); render(); },
@@ -870,6 +908,7 @@ async function refreshToday() {
 
 (async function boot() {
   if (!configured) { render(); return; }
+  if (clubLocked()) { render(); return; }
   await refreshToday();
   render();
   // Poll so players' "Join" button appears once the organiser has set up.

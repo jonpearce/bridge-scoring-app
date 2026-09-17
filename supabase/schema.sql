@@ -78,6 +78,14 @@ end $$;
 -- access scoped to sessions. To harden for the public internet, enable
 -- authentication and tighten the policies below instead.
 
+-- Reads stay open (Realtime needs them). Writes must carry the shared club
+-- word in the x-club-code header, which the app sends on every request.
+-- Change the word here AND in config.js (CLUB_CODE).
+create or replace function public.club_ok()
+returns boolean language sql stable as $$
+  select coalesce(current_setting('request.headers', true)::json->>'x-club-code', '') = 'golf';
+$$;
+
 alter table public.sessions       enable row level security;
 alter table public.boards         enable row level security;
 alter table public.results        enable row level security;
@@ -88,11 +96,11 @@ create policy "sessions select" on public.sessions
 
 drop policy if exists "sessions insert" on public.sessions;
 create policy "sessions insert" on public.sessions
-  for insert with check (true);
+  for insert with check (public.club_ok());
 
 drop policy if exists "sessions update" on public.sessions;
 create policy "sessions update" on public.sessions
-  for update using (true);
+  for update using (public.club_ok()) with check (public.club_ok());
 
 drop policy if exists "boards select" on public.boards;
 create policy "boards select" on public.boards
@@ -100,11 +108,11 @@ create policy "boards select" on public.boards
 
 drop policy if exists "boards insert" on public.boards;
 create policy "boards insert" on public.boards
-  for insert with check (true);
+  for insert with check (public.club_ok());
 
 drop policy if exists "boards update" on public.boards;
 create policy "boards update" on public.boards
-  for update using (true);
+  for update using (public.club_ok()) with check (public.club_ok());
 
 drop policy if exists "results select" on public.results;
 create policy "results select" on public.results
@@ -112,12 +120,12 @@ create policy "results select" on public.results
 
 drop policy if exists "results insert" on public.results;
 create policy "results insert" on public.results
-  for insert with check (true);
+  for insert with check (public.club_ok());
 
 drop policy if exists "results update" on public.results;
 create policy "results update" on public.results
-  for update using (true);
+  for update using (public.club_ok()) with check (public.club_ok());
 
 drop policy if exists "results delete" on public.results;
 create policy "results delete" on public.results
-  for delete using (true);
+  for delete using (public.club_ok());

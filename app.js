@@ -324,7 +324,7 @@ function renderGate() {
     </div>
     <div class="card">
       <span class="label" style="margin-top:0">Club word</span>
-      <input id="club-input" class="field" type="text" placeholder="Club word" autocomplete="off" autocapitalize="none" autocorrect="off" />
+      <input id="club-input" class="field" type="text" placeholder="Club word" data-enter="club_submit" autocomplete="off" autocapitalize="none" autocorrect="off" />
       <button class="btn grow" data-action="club_submit">Enter</button>
     </div>`;
 }
@@ -414,7 +414,7 @@ function renderHome() {
 
       <div class="card">
         <span class="label" style="margin-top:0">Your pair name</span>
-        <input class="field" data-action="name_input" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
+        <input class="field" data-action="name_input" data-enter="join_today" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
         <span class="label">We sit</span>
         <div class="chips">
           <button class="chip ${state.side === 'NS' ? 'on' : ''}" data-action="side_set" data-s="NS">N/S</button>
@@ -890,6 +890,13 @@ appEl.addEventListener('input', (ev) => {
   if (!el) return;
   const a = actions[el.dataset.action];
   if (typeof a === 'function' && a.length >= 1) a(el, ev);
+});
+appEl.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Enter') return;
+  const el = ev.target.closest('[data-enter]');
+  if (!el) return;
+  ev.preventDefault();
+  actions[el.dataset.enter]?.(el, ev);
 });
 document.addEventListener('click', (ev) => {
   // close sheets by tapping backdrop

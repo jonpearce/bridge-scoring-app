@@ -259,11 +259,13 @@ const entryIsBlank = () => !state.entry.level && !state.entry.strain && !state.e
 const entryIsComplete = () => !!(state.entry.level && state.entry.strain && state.entry.declarer && state.entry.tricks != null);
 function entryPreview() {
   const e = state.entry;
-  if (entryIsBlank() || !entryIsComplete()) return { nsScore: null, ownScore: null, down: 0, made: 0 };
+  if (entryIsBlank() || !entryIsComplete()) return { nsScore: null, ownScore: null, declScore: null, declSide: null, down: 0, made: 0 };
   const v = vulnFor(e.boardNum);
   const nsScore = makeScore(e.level, e.strain, e.doubled || 'No', e.tricks, e.declarer, { ns: !!v.vul_ns, ew: !!v.vul_ew });
   const ownScore = state.side === 'EW' ? -nsScore : nsScore;
-  return { nsScore, ownScore, down: Math.max(0, e.level + 6 - e.tricks), made: Math.max(0, e.tricks - (e.level + 6)) };
+  const declSide = (e.declarer === 'N' || e.declarer === 'S') ? 'NS' : 'EW';
+  const declScore = declSide === 'EW' ? -nsScore : nsScore;
+  return { nsScore, ownScore, declScore, declSide, down: Math.max(0, e.level + 6 - e.tricks), made: Math.max(0, e.tricks - (e.level + 6)) };
 }
 
 // live matchpoints for the current in-progress entry versus known results
@@ -348,15 +350,15 @@ function renderDoneSheet() {
   const onEntry = myResultFor(bn);
   const v = vulnFor(bn);
   const sb = computeBoards()[bn];
-  const rows = sb ? sb.rows.slice().sort((a, b) => b.nsScore - a.nsScore) : [];
-  const highest = rows[0]?.nsScore;
+  const rows = sb ? sb.rows.slice().sort((a, b) => b.ownScore - a.ownScore) : [];
+  const highest = rows[0]?.ownScore;
   return `
     <div class="sheet-back"><div class="sheet">
       <h2 class="screen-title" style="margin-bottom:2px">Board ${bn} — all results</h2>
       <div class="muted" style="margin-bottom:14px">${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))} · ${esc(displayContract(onEntry ? { level: onEntry.contract_level, strain: onEntry.strain, doubled: onEntry.doubled } : null))}</div>
       ${rows.length === 0 ? `<div class="card">No results yet on this board.</div>` : rows.map((r) => {
         const mine = r.pair === state.name;
-        const best = r.nsScore === highest;
+        const best = r.ownScore === highest;
         return `
         <div class="summary-row${mine ? ' highlight' : ''}">
           <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}</div>
@@ -574,7 +576,6 @@ function renderEntry() {
   const leadRanks = RANKS.map((rk) =>
     `<button class="chip ${e.leadRank === rk ? 'on' : ''}" data-action="ent_lead_rank" data-r="${rk}">${rk}</button>`).join('');
 
-  const sideLab = state.side === 'EW' ? 'E/W' : 'N/S';
   const dealerBtns = ['N', 'E', 'S', 'W'].map((d) =>
     `<button class="chip ${birth.dealer === d ? 'on' : ''}" data-action="ent_dealer" data-d="${d}">${d}</button>`).join('');
   const vulnBtns = [
@@ -641,10 +642,10 @@ function renderEntry() {
 
       <div class="score-preview">
         <div>
-          <div class="who">${sideLab} score</div>
-          ${showMp ? `<div class="small" style="opacity:0.85">${showMp.points} of ${showMp.top} matchpoints</div>` : ''}
-        </div>
-        <div class="amt">${p.ownScore == null ? (blank ? '0' : '') : fmtScore(p.ownScore)}</div>
+        <div class="who">${(p.declSide || 'NS') === 'EW' ? 'E/W' : 'N/S'} score</div>
+        ${showMp ? `<div class="small" style="opacity:0.85">${showMp.points} of ${showMp.top} matchpoints</div>` : ''}
+      </div>
+      <div class="amt">${p.declScore == null ? (blank ? '0' : '') : fmtScore(p.declScore)}</div>
       </div>
 
       <button class="btn grow" data-action="ent_save" style="min-height:64px;font-size:1.25rem">Save result</button>

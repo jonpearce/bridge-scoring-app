@@ -414,7 +414,7 @@ function renderHome() {
 
       <div class="card">
         <span class="label" style="margin-top:0">Your pair name</span>
-        <input class="field" data-action="name_input" data-enter="join_today" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
+        <input class="field" data-action="name_input" data-enter="blur" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
         <span class="label">We sit</span>
         <div class="chips">
           <button class="chip ${state.side === 'NS' ? 'on' : ''}" data-action="side_set" data-s="NS">N/S</button>
@@ -730,6 +730,7 @@ const actions = {
   },
   go_home() { closeSheets(); state.screen = 'home'; render(); refreshToday(); },
   name_input(el) { state.name = el.value; ls.setName(el.value); },
+  blur(el) { el.blur(); },
   side_set(el) { state.side = el.dataset.s; ls.setSide(el.dataset.s); render(); },
   join_today() { closeSheets(); busy(async () => {
     if (!state.name.trim()) return toast('Enter your pair name first');

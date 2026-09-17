@@ -1,4 +1,4 @@
-# Flinders Social Bridge — duplicate bridge scoring app
+# Flinders Bridge — duplicate bridge scoring app
 
 A phone-first web app for a club duplicate bridge evening. Each pair enters its
 own results from its phone; every phone sees the live standings and every

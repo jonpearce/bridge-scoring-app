@@ -380,8 +380,8 @@ function renderHome() {
     <div class="screen">
       <div class="hero">
         <span class="glyph">♣</span>
-        <h1>Flinders Social Bridge</h1>
-        <p>${today} · duplicate today made easy</p>
+        <h1>Flinders Bridge</h1>
+        <p>${today} · duplicate made easy</p>
       </div>
       ${badge}
 

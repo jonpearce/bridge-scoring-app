@@ -31,6 +31,7 @@ create table if not exists public.results (
   board_num    int  not null,
   pair         text not null,        -- pair name entered on the phone, e.g. "Jon & Mary"
   side         text not null,        -- 'NS' or 'EW' — the side this pair sat
+  table_num    int null,             -- the table this phone is responsible for
   contract_level int null,           -- 1..7, null = passed out
   strain       text null,            -- S,H,D,C,NT
   doubled      text not null default 'No',  -- No, X, XX
@@ -44,6 +45,9 @@ create table if not exists public.results (
 );
 
 create index if not exists results_session_idx on public.results (session_id, board_num);
+
+-- For a database that already ran an older version of this file:
+alter table public.results add column if not exists table_num int;
 
 -- Keep updated_at fresh
 create or replace function public.set_updated_at()
@@ -101,6 +105,10 @@ create policy "sessions insert" on public.sessions
 drop policy if exists "sessions update" on public.sessions;
 create policy "sessions update" on public.sessions
   for update using (public.club_ok()) with check (public.club_ok());
+
+drop policy if exists "sessions delete" on public.sessions;
+create policy "sessions delete" on public.sessions
+  for delete using (public.club_ok());
 
 drop policy if exists "boards select" on public.boards;
 create policy "boards select" on public.boards

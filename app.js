@@ -61,6 +61,8 @@ const ls = {
   setName(n) { localStorage.setItem('bridge:name', n); },
   side() { return localStorage.getItem('bridge:side') || ''; },
   setSide(s) { localStorage.setItem('bridge:side', s); },
+  table() { return localStorage.getItem('bridge:table') || ''; },
+  setTable(t) { localStorage.setItem('bridge:table', t); },
   club() { return localStorage.getItem('bridge:club') || ''; },
   setClub(c) { localStorage.setItem('bridge:club', c); },
 };
@@ -191,6 +193,7 @@ async function upsertResult() {
     board_num: e.boardNum,
     pair: state.name,
     side: state.side,
+    table_num: Number(ls.table()) || null,
     contract_level: blank ? null : e.level,
     strain: blank ? null : e.strain,
     doubled: blank ? 'No' : (e.doubled || 'No'),
@@ -342,6 +345,13 @@ function renderSheet() {
       <button class="btn danger grow" data-action="reset_confirm">Delete all scores</button>
       <button class="btn soft grow" data-action="sheet_close">Cancel</button>
     </div></div>`;
+  if (s === 'deleteSession') return `
+    <div class="sheet-back" data-action="sheet_close"><div class="sheet" data-stop="1">
+      <h2 class="screen-title" style="margin-bottom:4px">Delete today's session?</h2>
+      <div class="muted" style="margin-bottom:16px">This removes the session, its boards and every score. All phones will drop back to 'No session set up yet' and you can start fresh.</div>
+      <button class="btn danger grow" data-action="delete_session">Delete session</button>
+      <button class="btn soft grow" data-action="sheet_close">Cancel</button>
+    </div></div>`;
   return '';
 }
 
@@ -361,7 +371,7 @@ function renderDoneSheet() {
         const best = r.ownScore === highest;
         return `
         <div class="summary-row${mine ? ' highlight' : ''}">
-          <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}</div>
+          <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}${r.table_num ? ` <span class="tiny">T${esc(r.table_num)}</span>` : ''}</div>
           <div style="text-align:right">
             <div style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${esc(r.declarer)}` : ''}</div>
             <div class="small muted">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${best && !mine ? ' · <b>best</b>' : ''}</div>
@@ -390,7 +400,7 @@ function renderDetailSheet() {
       ${rows.length === 0 ? '<div class="card">No results yet on this board.</div>' : `
       ${rows.slice().sort((a, b) => b.points - a.points).map((r) => `
         <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
-          <span class="t">${esc(r.pair || '—')}</span>
+          <span class="t">${esc(r.pair || '—')}${r.table_num ? ` <span class="tiny">T${esc(r.table_num)}</span>` : ''}</span>
           <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${esc(r.declarer)}` : ''}</span>
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
           <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
@@ -426,6 +436,11 @@ function renderHome() {
           <button class="chip ${state.side === 'NS' ? 'on' : ''}" data-action="side_set" data-s="NS">N/S</button>
           <button class="chip ${state.side === 'EW' ? 'on' : ''}" data-action="side_set" data-s="EW">E/W</button>
         </div>
+        <span class="label">We are at table</span>
+        <div class="chips" style="grid-template-columns:repeat(4,1fr)">
+          ${Array.from({ length: 16 }, (_, i) => i + 1).map((n) =>
+            `<button class="chip ${ls.table() === String(n) ? 'on' : ''}" data-action="table_set" data-t="${n}">${n}</button>`).join('')}
+        </div>
       </div>
 
       <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${ready ? '' : 'disabled'}>
@@ -437,6 +452,10 @@ function renderHome() {
       <div class="small" style="text-align:center">
         <button class="btn small ghost" data-action="go_create" style="width:auto;margin:0 auto">Set up session</button>
         <div class="small muted" style="margin-top:6px">For the organiser — boards &amp; vulnerability</div>
+      </div>
+
+      <div class="small" style="text-align:center;margin-top:10px">
+        <button class="btn small ghost" data-action="clear_device" style="width:auto;margin:0 auto">Different pair? Clear this phone</button>
       </div>
     </div>`;
 }
@@ -494,6 +513,9 @@ function renderSetup() {
       <div class="small" style="text-align:center;margin-top:18px">
         <button class="btn small ghost" data-action="open_reset" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Reset scores</button>
       </div>
+      <div class="small" style="text-align:center;margin-top:10px">
+        <button class="btn small ghost" data-action="open_delete_session" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Delete today's session</button>
+      </div>
     </div>`;
 }
 
@@ -516,18 +538,19 @@ function renderRoom() {
               `<span class="tiny">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${mine ? ` · ${mine.points}/${sb.top} MP` : ''}</span>`
             : 'Tap to enter score'}
         </span>
-        <span class="result">${r ? fmtScore(r.ownScore) : '→'}</span>
+        <span class="result">${mine ? fmtScore(mine.ownScore) : '→'}</span>
       </button>`;
   }).join('');
 
   const sideLab = state.side === 'EW' ? 'E/W' : 'N/S';
+  const tableLab = ls.table() ? ` · Table ${esc(ls.table())}` : '';
   return `
     <div class="screen">
       <div class="topbar">
         <button class="back" data-action="go_home">‹</button>
         <div style="flex:1">
           <div style="font-weight:800;font-size:1.1rem">${esc(sess.title || 'Session')}</div>
-          <div class="small muted">${esc(state.name || 'Your pair')} · ${sideLab}</div>
+          <div class="small muted">${esc(state.name || 'Your pair')} · ${sideLab}${tableLab}</div>
         </div>
       </div>
 
@@ -681,7 +704,7 @@ function renderStandings() {
       <div class="small muted" style="margin:-6px 0 10px">Dealer ${esc(v.dealer)} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length ? rows.map((r) => `
         <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
-          <span class="t">${esc(r.pair || '—')}</span>
+          <span class="t">${esc(r.pair || '—')}${r.table_num ? ` <span class="tiny">T${esc(r.table_num)}</span>` : ''}</span>
           <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</span>
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
           <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
@@ -737,6 +760,13 @@ const actions = {
   name_input(el) { state.name = el.value; ls.setName(el.value); },
   blur(el) { el.blur(); },
   side_set(el) { state.side = el.dataset.s; ls.setSide(el.dataset.s); render(); },
+  table_set(el) { ls.setTable(el.dataset.t); render(); },
+  clear_device() {
+    ls.setName(''); ls.setSide(''); ls.setTable('');
+    state.name = ''; state.side = '';
+    render();
+    toast('This phone has been cleared — enter your details again');
+  },
   join_today() { closeSheets(); busy(async () => {
     if (!state.name.trim()) return toast('Enter your pair name first');
     if (!state.side) return toast('Choose N/S or E/W first');
@@ -758,6 +788,16 @@ const actions = {
   sheet_close() { closeSheets(); render(); },
   sheet_close_refresh() { closeSheets(); render(); },
   open_reset() { state.sheet = 'reset'; render(); },
+  open_delete_session() { state.sheet = 'deleteSession'; render(); },
+  delete_session() { closeSheets(); busy(async () => {
+    const code = state.session?.code;
+    if (!code) return;
+    chan?.unsubscribe();
+    const { error } = await supabase.from('sessions').delete().eq('code', code);
+    if (error) throw new Error(error.message);
+    state.session = null; state.boards = []; state.results = []; state.standingsBoard = null;
+    state.screen = 'home'; render(); refreshToday();
+  }, 'Deleting…'); },
   reset_confirm() { closeSheets(); busy(async () => {
     await resetResults();
     toast('All scores deleted');

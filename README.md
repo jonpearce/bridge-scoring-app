@@ -87,24 +87,24 @@ python3 -m http.server 8000      # then open localhost:8000 on your phone
 
 ## Using it at the table
 
-1. **Start** — the host creates a session and picks how many boards (default 24).
-   Vulnerability is already correct; adjusting it is optional (tap a board to
-   change it).
-2. **Each pair joins** — type your pair name, choose N/S or E/W, and pick which
-   table this phone is at (the playing pair stays and enters every board).
-   Then tap *Join today's session*. The name and table are remembered on the
-   phone. *Different pair? Clear this phone* at the bottom of the home screen
-   wipes them.
+1. **Check in** — the first phone to set up for the day becomes the
+   **controller**. On the home screen, tap *Set up session*, pick how many boards
+   (default 24). Vulnerability is already correct; adjusting it is optional (tap
+   a board to change it). Once it is set, that button greys out for every other
+   phone — they just follow the boards the controller laid out.
+2. **Each pair joins** — type your pair name and choose N/S or E/W, then tap
+   *Join today's session*. The name is remembered on the phone. *Different pair?
+   Clear this phone* at the bottom of the home screen wipes it.
 3. **Enter a result** — tap a board on your list: bid level, strain, doubled?,
    who declared, opening lead, tricks won. The score and live matchpoints appear
    before you save. Leave everything blank if the board was passed out.
 4. After saving, the app shows **every result entered on that board** ("previous
    games of the same cards"), then offers the next board.
 5. **Live results** — tap *Live results & standings* anytime; standings and a
-   per-board list update as other pairs enter theirs.
-6. **Start over** — the organiser can *Reset scores* (wipe results) or *Delete
-   today's session* (remove everything so all phones start fresh) on the set-up
-   screen.
+   per-board list (with each pair's opening lead) update as pairs enter theirs.
+6. **Start over** — only the controller can *Reset scores* (wipe results) or
+   *Delete today's session* (remove everything so all phones start fresh) on the
+   set-up screen.
 
 ## Notes & trade-offs
 

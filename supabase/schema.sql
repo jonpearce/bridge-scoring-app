@@ -31,7 +31,6 @@ create table if not exists public.results (
   board_num    int  not null,
   pair         text not null,        -- pair name entered on the phone, e.g. "Jon & Mary"
   side         text not null,        -- 'NS' or 'EW' — the side this pair sat
-  table_num    int null,             -- the table this phone is responsible for
   contract_level int null,           -- 1..7, null = passed out
   strain       text null,            -- S,H,D,C,NT
   doubled      text not null default 'No',  -- No, X, XX
@@ -46,8 +45,18 @@ create table if not exists public.results (
 
 create index if not exists results_session_idx on public.results (session_id, board_num);
 
--- For a database that already ran an older version of this file:
-alter table public.results add column if not exists table_num int;
+-- Tidy-up for databases created by an earlier version of this file:
+alter table public.results drop column if exists table_num;
+
+-- ---------- Today's controller (the first person to check in) ----------
+-- One row per calendar day. The first phone to check in wins; everyone else
+-- follows the boards that phone sets up, and only that phone can reset.
+create table if not exists public.day_controllers (
+  day         text primary key,       -- local date, 'YYYY-MM-DD'
+  device_id   text not null,          -- the controller phone's id
+  pair        text,                   -- the controller's pair name (for display)
+  created_at  timestamptz not null default now()
+);
 
 -- Keep updated_at fresh
 create or replace function public.set_updated_at()
@@ -93,6 +102,7 @@ $$;
 alter table public.sessions       enable row level security;
 alter table public.boards         enable row level security;
 alter table public.results        enable row level security;
+alter table public.day_controllers enable row level security;
 
 drop policy if exists "sessions select" on public.sessions;
 create policy "sessions select" on public.sessions
@@ -137,3 +147,19 @@ create policy "results update" on public.results
 drop policy if exists "results delete" on public.results;
 create policy "results delete" on public.results
   for delete using (public.club_ok());
+
+-- Controller: readable by all, claimable once per day (first insert wins via
+-- the primary key + ON CONFLICT DO NOTHING). No update/delete — the day's
+-- controller is fixed until the next day.
+drop policy if exists "day_controllers select" on public.day_controllers;
+create policy "day_controllers select" on public.day_controllers
+  for select using (true);
+
+drop policy if exists "day_controllers insert" on public.day_controllers;
+create policy "day_controllers insert" on public.day_controllers
+  for insert with check (public.club_ok());
+
+-- Let the controller fill in / correct their own name once they check in.
+drop policy if exists "day_controllers update" on public.day_controllers;
+create policy "day_controllers update" on public.day_controllers
+  for update using (public.club_ok()) with check (public.club_ok());

@@ -47,6 +47,8 @@ const state = {
   results: [],
   name: '',                       // this pair's name, tagged on every result
   side: '',                       // '', 'NS' or 'EW' — chosen on the first screen
+  isController: false,            // first phone to check in today owns the session
+  controller: null,               // today's controller row ({ device_id, pair })
   draft: {
     boards: 24,
     vuln: {},                     // boardNum -> {ns, ew}
@@ -61,8 +63,14 @@ const ls = {
   setName(n) { localStorage.setItem('bridge:name', n); },
   side() { return localStorage.getItem('bridge:side') || ''; },
   setSide(s) { localStorage.setItem('bridge:side', s); },
-  table() { return localStorage.getItem('bridge:table') || ''; },
-  setTable(t) { localStorage.setItem('bridge:table', t); },
+  device() {
+    let d = localStorage.getItem('bridge:device');
+    if (!d) {
+      d = 'd-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      localStorage.setItem('bridge:device', d);
+    }
+    return d;
+  },
   club() { return localStorage.getItem('bridge:club') || ''; },
   setClub(c) { localStorage.setItem('bridge:club', c); },
 };
@@ -165,6 +173,37 @@ async function todaySession() {
   return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate() ? s : null;
 }
 
+/* ---------- today's controller ---------- */
+// The first phone to check in for the day becomes the controller: it is the
+// only phone that can set up (or reset) the session. Everyone else just follows
+// the boards the controller lays out. Identity is a per-phone device id kept in
+// localStorage; the claim is one row per calendar day, first insert wins.
+function dayKey() {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+}
+
+async function loadController() {
+  if (!configured) return;
+  const { data, error } = await supabase.from('day_controllers').select().eq('day', dayKey()).maybeSingle();
+  if (error) throw new Error(error.message);
+  state.controller = data || null;
+  state.isController = !!(data && data.device_id === ls.device());
+}
+
+async function claimController(pair) {
+  if (!configured) return;
+  const day = dayKey(), device_id = ls.device();
+  await supabase.from('day_controllers')
+    .upsert({ day, device_id, pair: pair || null }, { onConflict: 'day', ignoreDuplicates: true });
+  await loadController();
+  // The controller can correct their name later (e.g. they set up before typing it).
+  if (state.isController && pair && state.controller.pair !== pair) {
+    await supabase.from('day_controllers').update({ pair }).eq('day', day).eq('device_id', device_id);
+    state.controller.pair = pair;
+  }
+}
+
 async function loadSession(sess) {
   state.session = sess;
   const [boards, results] = await Promise.all([
@@ -193,7 +232,6 @@ async function upsertResult() {
     board_num: e.boardNum,
     pair: state.name,
     side: state.side,
-    table_num: Number(ls.table()) || null,
     contract_level: blank ? null : e.level,
     strain: blank ? null : e.strain,
     doubled: blank ? 'No' : (e.doubled || 'No'),
@@ -256,6 +294,12 @@ function newEntry(boardNum, existing) {
 }
 
 const leadOf = (e) => (e.leadSuit && e.leadRank ? `${e.leadSuit}${e.leadRank}` : null);
+const leadDisplay = (r) => {
+  const l = r.open_lead;
+  if (!l) return null;
+  if (l.length === 2 && RANKS.includes(l.slice(1))) return `${strainGlyph(normSuit(l[0]))}${l.slice(1)}`;
+  return l;
+};
 
 function entryDoneTricks() { return state.entry.level + 6; }
 const entryIsBlank = () => !state.entry.level && !state.entry.strain && !state.entry.declarer;
@@ -371,7 +415,7 @@ function renderDoneSheet() {
         const best = r.ownScore === highest;
         return `
         <div class="summary-row${mine ? ' highlight' : ''}">
-          <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}${r.table_num ? ` <span class="tiny">T${esc(r.table_num)}</span>` : ''}</div>
+          <div class="fp" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.pair || '—')}</div>
           <div style="text-align:right">
             <div style="font-weight:700">${esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${esc(r.declarer)}` : ''}</div>
             <div class="small muted">${r.contract_level == null ? 'Passed out' : `${r.tricks} tricks`}${best && !mine ? ' · <b>best</b>' : ''}</div>
@@ -400,7 +444,7 @@ function renderDetailSheet() {
       ${rows.length === 0 ? '<div class="card">No results yet on this board.</div>' : `
       ${rows.slice().sort((a, b) => b.points - a.points).map((r) => `
         <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
-          <span class="t">${esc(r.pair || '—')}${r.table_num ? ` <span class="tiny">T${esc(r.table_num)}</span>` : ''}</span>
+          <span class="t">${esc(r.pair || '—')}</span>
           <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}${r.declarer ? ` · ${esc(r.declarer)}` : ''}</span>
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
           <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
@@ -419,6 +463,15 @@ function renderHome() {
     : ready ? `Join today's session`
     : !state.name.trim() ? 'Enter your pair name'
     : 'Choose N/S or E/W';
+  // The first phone to check in sets up the session; once it is set the button
+  // is greyed out for everyone except that controller. (If a session predates
+  // controller tracking there is no controller yet, so let the first taker claim it.)
+  const canSetup = !has || state.isController || !state.controller;
+  const setupLabel = !has ? 'Set up session'
+    : (state.isController || !state.controller) ? 'Manage session' : 'Session already set up';
+  const ctrlNote = state.controller?.pair
+    ? `Today's controller: ${esc(state.controller.pair)}`
+    : (has ? '' : 'First phone to set up controls the boards today');
   return `
     <div class="screen">
       <div class="hero">
@@ -428,6 +481,12 @@ function renderHome() {
       </div>
       ${badge}
 
+      <button class="btn ${canSetup ? '' : 'soft'}" data-action="go_create" ${canSetup ? '' : 'disabled'}
+        style="width:100%;min-height:60px;font-size:1.1rem;margin-bottom:6px">
+        ${setupLabel}
+      </button>
+      ${ctrlNote ? `<p class="small muted" style="text-align:center;margin-bottom:18px">${ctrlNote}</p>` : ''}
+
       <div class="card">
         <span class="label" style="margin-top:0">Your pair name</span>
         <input class="field" data-action="name_input" data-enter="blur" value="${esc(state.name)}" placeholder="e.g. Jon &amp; Mary" autocomplete="off" autocapitalize="words" />
@@ -436,23 +495,13 @@ function renderHome() {
           <button class="chip ${state.side === 'NS' ? 'on' : ''}" data-action="side_set" data-s="NS">N/S</button>
           <button class="chip ${state.side === 'EW' ? 'on' : ''}" data-action="side_set" data-s="EW">E/W</button>
         </div>
-        <span class="label">We are at table</span>
-        <div class="chips" style="grid-template-columns:repeat(4,1fr)">
-          ${Array.from({ length: 16 }, (_, i) => i + 1).map((n) =>
-            `<button class="chip ${ls.table() === String(n) ? 'on' : ''}" data-action="table_set" data-t="${n}">${n}</button>`).join('')}
-        </div>
       </div>
 
       <button class="btn" style="margin-bottom:14px;min-height:84px;font-size:1.4rem" data-action="join_today" ${ready ? '' : 'disabled'}>
         ${joinLabel}
       </button>
       ${has ? `<p class="small muted" style="text-align:center;margin-bottom:18px">Tap to join and enter your scores.</p>`
-        : `<p class="small muted" style="text-align:center;margin-bottom:18px">The organiser sets one up below before scoring begins.</p>`}
-
-      <div class="small" style="text-align:center">
-        <button class="btn small ghost" data-action="go_create" style="width:auto;margin:0 auto">Set up session</button>
-        <div class="small muted" style="margin-top:6px">For the organiser — boards &amp; vulnerability</div>
-      </div>
+        : `<p class="small muted" style="text-align:center;margin-bottom:18px">The controller sets one up above before scoring begins.</p>`}
 
       <div class="small" style="text-align:center;margin-top:10px">
         <button class="btn small ghost" data-action="clear_device" style="width:auto;margin:0 auto">Different pair? Clear this phone</button>
@@ -510,12 +559,14 @@ function renderSetup() {
 
       <button class="btn grow" data-action="save_setup">Save &amp; go to room</button>
 
+      ${state.isController ? `
       <div class="small" style="text-align:center;margin-top:18px">
         <button class="btn small ghost" data-action="open_reset" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Reset scores</button>
       </div>
       <div class="small" style="text-align:center;margin-top:10px">
         <button class="btn small ghost" data-action="open_delete_session" style="width:auto;margin:0 auto;color:var(--danger);border-color:var(--danger)">Delete today's session</button>
-      </div>
+      </div>` : `
+      <div class="small muted" style="text-align:center;margin-top:18px">Only today's controller${state.controller?.pair ? ` (${esc(state.controller.pair)})` : ''} can reset the session.</div>`}
     </div>`;
 }
 
@@ -543,14 +594,13 @@ function renderRoom() {
   }).join('');
 
   const sideLab = state.side === 'EW' ? 'E/W' : 'N/S';
-  const tableLab = ls.table() ? ` · Table ${esc(ls.table())}` : '';
   return `
     <div class="screen">
       <div class="topbar">
         <button class="back" data-action="go_home">‹</button>
         <div style="flex:1">
           <div style="font-weight:800;font-size:1.1rem">${esc(sess.title || 'Session')}</div>
-          <div class="small muted">${esc(state.name || 'Your pair')} · ${sideLab}${tableLab}</div>
+          <div class="small muted">${esc(state.name || 'Your pair')} · ${sideLab}</div>
         </div>
       </div>
 
@@ -704,8 +754,9 @@ function renderStandings() {
       <div class="small muted" style="margin:-6px 0 10px">Dealer ${esc(v.dealer)} · ${esc(vulnerabilityText({ ns: !!v.vul_ns, ew: !!v.vul_ew }))}</div>
       ${rows.length ? rows.map((r) => `
         <div class="board-line ${r.pair === state.name ? 'mine' : ''}">
-          <span class="t">${esc(r.pair || '—')}${r.table_num ? ` <span class="tiny">T${esc(r.table_num)}</span>` : ''}</span>
+          <span class="t">${esc(r.pair || '—')}</span>
           <span class="ct">${r.contract_level == null ? 'Passed out' : esc(displayContract({ level: r.contract_level, strain: r.strain, doubled: r.doubled }))}</span>
+          ${leadDisplay(r) ? `<span class="lead">lead ${esc(leadDisplay(r))}</span>` : ''}
           <span class="tk">${r.contract_level == null ? '0 tricks' : `${r.tricks} tricks`}</span>
           <span class="sc ${r.ownScore > 0 ? 'plus' : r.ownScore < 0 ? 'minus' : ''}">${fmtScore(r.ownScore)}</span>
           <span class="mp ${r.points === info.top ? 'hi' : ''}">${r.points} MP</span>
@@ -752,6 +803,7 @@ const actions = {
       state.screen = 'home';
       render();
       refreshToday();
+      loadController().catch(() => {});
     } else {
       toast('That word is not right');
     }
@@ -760,9 +812,8 @@ const actions = {
   name_input(el) { state.name = el.value; ls.setName(el.value); },
   blur(el) { el.blur(); },
   side_set(el) { state.side = el.dataset.s; ls.setSide(el.dataset.s); render(); },
-  table_set(el) { ls.setTable(el.dataset.t); render(); },
   clear_device() {
-    ls.setName(''); ls.setSide(''); ls.setTable('');
+    ls.setName(''); ls.setSide('');
     state.name = ''; state.side = '';
     render();
     toast('This phone has been cleared — enter your details again');
@@ -772,24 +823,29 @@ const actions = {
     if (!state.side) return toast('Choose N/S or E/W first');
     state.todaySession = state.todaySession || await todaySession();
     if (!state.todaySession) return toast('No session has been set up yet');
+    await claimController(state.name.trim());   // first to check in owns the day
     await loadSession(state.todaySession);
     enterRoom();
   }, 'Joining…'); },
   go_create() { closeSheets(); busy(async () => {
     state.todaySession = await todaySession();
-    if (state.todaySession) {
-      await loadSession(state.todaySession);
-      updateDraftFromSession();
-      state.screen = 'setup'; render();
-    } else {
-      state.draft.boards = 24; state.screen = 'create'; render();
+    await loadController();
+    if (!state.todaySession) {
+      await claimController(state.name.trim() || 'Controller');
+      if (!state.isController) { toast(`${state.controller?.pair || 'Someone'} is setting today's session up`); refreshToday(); return; }
+      state.draft.boards = 24; state.screen = 'create'; render(); return;
     }
+    if (!state.controller) await claimController(state.name.trim() || 'Controller');
+    if (!state.isController) { toast(`Today's session was set up by ${state.controller?.pair || 'the controller'}`); return; }
+    await loadSession(state.todaySession);
+    updateDraftFromSession();
+    state.screen = 'setup'; render();
   }, 'Opening…'); },
   sheet_close() { closeSheets(); render(); },
   sheet_close_refresh() { closeSheets(); render(); },
-  open_reset() { state.sheet = 'reset'; render(); },
-  open_delete_session() { state.sheet = 'deleteSession'; render(); },
-  delete_session() { closeSheets(); busy(async () => {
+  open_reset() { if (!state.isController) return toast('Only today\'s controller can reset'); state.sheet = 'reset'; render(); },
+  open_delete_session() { if (!state.isController) return toast('Only today\'s controller can reset'); state.sheet = 'deleteSession'; render(); },
+  delete_session() { closeSheets(); if (!state.isController) return toast('Only today\'s controller can reset'); busy(async () => {
     const code = state.session?.code;
     if (!code) return;
     chan?.unsubscribe();
@@ -798,13 +854,15 @@ const actions = {
     state.session = null; state.boards = []; state.results = []; state.standingsBoard = null;
     state.screen = 'home'; render(); refreshToday();
   }, 'Deleting…'); },
-  reset_confirm() { closeSheets(); busy(async () => {
+  reset_confirm() { closeSheets(); if (!state.isController) return toast('Only today\'s controller can reset'); busy(async () => {
     await resetResults();
     toast('All scores deleted');
   }, 'Resetting…'); },
 
   create_boards(el) { state.draft.boards = Math.min(24, Math.max(1, state.draft.boards + +el.dataset.d)); render(); },
   create_go() { busy(async () => {
+    await claimController(state.name.trim() || 'Controller');
+    if (!state.isController) { toast(`${state.controller?.pair || 'Someone'} is setting today's session up`); state.screen = 'home'; render(); refreshToday(); return; }
     const s = await createSession(state.draft.boards, null);
     await loadSession(s);
     updateDraftFromSession();
@@ -964,7 +1022,13 @@ async function refreshToday() {
   if (!configured) { render(); return; }
   if (clubLocked()) { render(); return; }
   await refreshToday();
+  try { await loadController(); } catch (e) {}
   render();
-  // Poll so players' "Join" button appears once the organiser has set up.
-  setInterval(() => { if (state.screen === 'home') refreshToday(); }, 15000);
+  // Poll so players' "Join" button appears once the controller has set up,
+  // and the setup button greys out for everyone else.
+  setInterval(async () => {
+    if (state.screen !== 'home') return;
+    await refreshToday();
+    try { await loadController(); } catch (e) {}
+  }, 15000);
 })();

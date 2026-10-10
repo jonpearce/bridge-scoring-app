@@ -363,6 +363,7 @@ h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing:
 .board-line.mine { border-color: var(--accent); box-shadow: var(--shadow-sm); }
 .board-line .t { font-weight: 800; font-family: var(--font-display); min-width: 30px; }
 .board-line .ct { flex: 1; font-weight: 700; }
+.board-line .lead { font-size: 0.8rem; color: var(--ink-soft); white-space: nowrap; }
 .board-line .tk { color: var(--ink-soft); }
 .board-line .sc { font-weight: 800; font-family: var(--font-display); }
 .board-line .sc.plus { color: var(--green); }

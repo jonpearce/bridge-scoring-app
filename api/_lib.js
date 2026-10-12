@@ -37,6 +37,7 @@ export function handler(methods) {
       const fn = methods[req.method];
       if (!fn) throw new HttpError(405, 'Method not allowed');
       if (!SERVICE_KEY) throw new HttpError(500, 'Server is not configured: SUPABASE_SERVICE_ROLE_KEY is missing in Vercel.');
+      if (keyKind() === 'public') throw new HttpError(500, 'Server is not configured: SUPABASE_SERVICE_ROLE_KEY in Vercel holds the PUBLIC (anon/publishable) key. It needs the secret service_role key.');
       await fn(req, res);
     } catch (e) {
       const status = e.status || 500;
@@ -44,6 +45,19 @@ export function handler(methods) {
       send(res, status, { error: e.message || 'Something went wrong', ...(e.extra || {}) });
     }
   };
+}
+
+// Which kind of Supabase key is configured — never reveals the key itself.
+export function keyKind() {
+  if (SERVICE_KEY.startsWith('sb_secret_')) return 'secret';
+  if (SERVICE_KEY.startsWith('sb_publishable_')) return 'public';
+  if (SERVICE_KEY.startsWith('eyJ')) {
+    try {
+      const role = JSON.parse(Buffer.from(SERVICE_KEY.split('.')[1], 'base64url').toString()).role;
+      return role === 'service_role' ? 'secret' : 'public';
+    } catch { return 'unknown'; }
+  }
+  return 'unknown';
 }
 
 // ---------- access code + session cookie ----------

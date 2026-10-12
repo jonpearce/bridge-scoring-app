@@ -1,0 +1,178 @@
+// End-to-end tests of the /api functions against an in-memory stand-in for
+// Supabase (no network, no real data touched).
+import { test, before } from 'node:test';
+import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
+
+process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-secret';
+process.env.SUPABASE_URL = 'https://fake.supabase.test';
+
+// ---------- fake PostgREST ----------
+const T = { chi_events: [], chi_sessions: [], chi_deals: [] };
+let clock = Date.parse('2026-10-12T10:00:00Z');
+const now = () => new Date((clock += 1000)).toISOString();
+const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'] };
+
+function parse(url) {
+  const u = new URL(url);
+  const table = u.pathname.split('/').pop();
+  const filters = [];
+  for (const [k, v] of u.searchParams) {
+    if (['select', 'order', 'limit', 'on_conflict'].includes(k)) continue;
+    filters.push([k, decodeURIComponent(v.replace(/^eq\./, ''))]);
+  }
+  return { table, filters, select: u.searchParams.get('select') || '' };
+}
+const match = (row, filters) => filters.every(([k, v]) => String(row[k]) === v);
+const embed = (table, select, r) => (table === 'chi_sessions' && select.includes('chi_deals')
+  ? { ...r, chi_deals: T.chi_deals.filter((d) => d.session_id === r.id) } : r);
+
+globalThis.fetch = async (url, opts = {}) => {
+  const { table, filters, select } = parse(url);
+  const prefer = opts.headers?.Prefer || '';
+  const body = opts.body ? JSON.parse(opts.body) : null;
+  let out;
+  if (!opts.method || opts.method === 'GET') {
+    out = T[table].filter((r) => match(r, filters)).map((r) => embed(table, select, r));
+  } else if (opts.method === 'POST') {
+    const keys = UNIQUE[table];
+    const dup = T[table].find((r) => keys.every((k) => body[k] != null && r[k] === body[k]));
+    if (dup) out = prefer.includes('ignore-duplicates') ? [] : [dup];
+    else {
+      const row = { id: crypto.randomUUID(), created_at: now(), updated_at: now(), doubled: '', ...body };
+      T[table].push(row);
+      out = [embed(table, select, row)];
+    }
+  } else if (opts.method === 'PATCH') {
+    out = T[table].filter((r) => match(r, filters));
+    out.forEach((r) => Object.assign(r, body, { updated_at: now() }));
+    out = out.map((r) => embed(table, select, r));
+  }
+  return new Response(JSON.stringify(out), { status: 200 });
+};
+
+// ---------- tiny request/response doubles ----------
+let cookie = '';
+async function call(mod, method, body, query = '') {
+  const req = { method, url: '/api/x' + query, headers: { cookie }, body };
+  const res = {
+    statusCode: 200, headers: {}, out: '',
+    setHeader(k, v) { this.headers[k.toLowerCase()] = v; },
+    end(s) { this.out = s; },
+  };
+  await mod.default(req, res);
+  if (res.headers['set-cookie']) cookie = res.headers['set-cookie'].split(';')[0];
+  return { status: res.statusCode, body: JSON.parse(res.out) };
+}
+
+let login, sessions, deal;
+before(async () => {
+  login = await import('../api/login.js');
+  sessions = await import('../api/sessions.js');
+  deal = await import('../api/deal.js');
+});
+
+const newTable = {
+  location: 'Clubhouse, table 1', startBoard: 12, firstDealer: 'N',
+  nsP1: 'Jon', nsP2: 'Mary', ewP1: 'Ann', ewP2: 'Bob', clientToken: crypto.randomUUID(),
+};
+let sid;
+
+test('nothing works without the access code', async () => {
+  assert.equal((await call(sessions, 'GET')).status, 401);
+  assert.equal((await call(login, 'POST', { code: 'chess' })).status, 401);
+  assert.equal((await call(login, 'GET')).body.ok, false);
+});
+
+test('correct code (any case) lets the phone in', async () => {
+  assert.equal((await call(login, 'POST', { code: ' Golf ' })).status, 200);
+  assert.equal((await call(login, 'GET')).body.ok, true);
+});
+
+test('a tampered cookie is rejected', async () => {
+  const good = cookie;
+  cookie = good.replace(/.$/, (c) => (c === 'A' ? 'B' : 'A'));
+  assert.equal((await call(sessions, 'GET')).status, 401);
+  cookie = good;
+});
+
+test('start a session; a double tap does not create a second one', async () => {
+  const a = await call(sessions, 'POST', newTable);
+  assert.equal(a.status, 201);
+  sid = a.body.session.id;
+  const b = await call(sessions, 'POST', newTable);
+  assert.equal(b.body.session.id, sid);
+  assert.equal(T.chi_sessions.length, 1);
+});
+
+test('missing names are refused', async () => {
+  const r = await call(sessions, 'POST', { ...newTable, ewP2: ' ', clientToken: crypto.randomUUID() });
+  assert.equal(r.status, 400);
+});
+
+test('save four boards; scores are calculated on the server', async () => {
+  const deals = [
+    { dealNo: 1, level: 2, strain: 'H', declarer: 'N', tricks: 9, leadSuit: 'S', leadRank: 'K', nsScore: 99999 },
+    { dealNo: 2, level: 2, strain: 'S', declarer: 'E', tricks: 8 },
+    { dealNo: 3, level: 2, strain: 'C', declarer: 'S', tricks: 8 },
+    { dealNo: 4, level: 3, strain: 'D', declarer: 'E', tricks: 10 },
+  ];
+  const got = [];
+  for (const d of deals) {
+    const r = await call(deal, 'PUT', { sessionId: sid, ...d });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    got.push(r.body.deal);
+  }
+  assert.deepEqual(got.map((d) => d.nsScore), [140, -110, 90, -130]);   // phone's 99999 ignored
+  assert.deepEqual(got.map((d) => d.boardNum), [12, 13, 14, 15]);
+});
+
+test('a second phone saving the same board is told, not allowed to overwrite', async () => {
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 1, level: 4, strain: 'S', declarer: 'N', tricks: 10 });
+  assert.equal(r.status, 409);
+  assert.equal(r.body.current.level, 2);
+});
+
+test('a correction updates the same record (no duplicate)', async () => {
+  const cur = T.chi_deals.find((d) => d.session_id === sid && d.deal_no === 1);
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 1, level: 3, strain: 'NT', declarer: 'N', tricks: 9, expectedUpdatedAt: cur.updated_at });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deal.nsScore, 400);
+  assert.equal(T.chi_deals.filter((d) => d.session_id === sid && d.deal_no === 1).length, 1);
+});
+
+test('a correction based on an out-of-date copy is refused', async () => {
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 1, level: 1, strain: 'C', declarer: 'N', tricks: 7, expectedUpdatedAt: '2000-01-01T00:00:00Z' });
+  assert.equal(r.status, 409);
+});
+
+test('passed-out board stores no contract and scores 0', async () => {
+  const cur = T.chi_deals.find((d) => d.session_id === sid && d.deal_no === 3);
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 3, passedOut: true, level: 5, expectedUpdatedAt: cur.updated_at });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deal.nsScore, 0);
+  assert.equal(r.body.deal.level, null);
+});
+
+test('invalid entries are refused', async () => {
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 2, level: 9, strain: 'S', declarer: 'N', tricks: 9 });
+  assert.equal(r.status, 400);
+});
+
+test('a second table can record the same board independently', async () => {
+  const s2 = await call(sessions, 'POST', { ...newTable, location: 'Table 2', nsP1: 'Cath', nsP2: 'Dave', ewP1: 'Eve', ewP2: 'Fay', clientToken: crypto.randomUUID() });
+  const r = await call(deal, 'PUT', { sessionId: s2.body.session.id, dealNo: 1, level: 4, strain: 'H', declarer: 'S', tricks: 10 });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deal.boardNum, 12);
+  const day = await call(sessions, 'GET');
+  const plays = day.body.sessions.flatMap((s) => s.deals).filter((d) => d.boardNum === 12);
+  assert.equal(plays.length, 2);
+});
+
+test('board numbers and dealer are locked once play has started', async () => {
+  const r = await call(sessions, 'PATCH', { id: sid, startBoard: 20 });
+  assert.equal(r.status, 409);
+  const ok = await call(sessions, 'PATCH', { id: sid, location: 'Clubhouse, table 3' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.session.location, 'Clubhouse, table 3');
+});

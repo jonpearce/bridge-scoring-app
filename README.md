@@ -1,120 +1,102 @@
-# Flinders Bridge — duplicate bridge scoring app
+# Chicago Bridge — social four-deal scoring
 
-A phone-first web app for a club duplicate bridge evening. Each pair enters its
-own results from its phone; every phone sees the live standings and every
-board's traveller as soon as a result lands. Big type, big buttons, no clutter —
-built for older players.
+A phone-first web app for recording social bridge games using **Chicago
+(four-deal) scoring**. One person from each pair enters results; every
+phone can compare results for the same board from other tables, and a Day
+summary ranks every pair.
 
-**Stack:** static frontend (plain HTML/CSS/JS, no build step) on **Vercel**,
-**Supabase** Postgres for storage, and **Supabase Realtime** to push each new
-score to every phone instantly. Source lives on **GitHub**.
+**Stack:** plain HTML/CSS/JavaScript (no build step) · Vercel (hosting and
+small server functions in `/api`) · Supabase (database) · GitHub (code).
 
 ---
 
-## How it scores
+## Scoring rules used (agreed 12 Oct 2026)
 
-- Duplicate **matchpoint pairs** — every result entered on a board is compared
-  with the others on that board.
-- N/S and E/W pairs are scored *separately* on each board, as standard, each
-  from their own perspective.
-- **Vulnerability + dealer are automatic** from the board number (board 1 = N
-  dealer / none vul, board 2 = E / NS, and so on). You can override per board
-  in setup, but that step is optional.
-- **Contracts, scores and penalties** follow Scheme Law 77 (part scores, game,
-  slam and doubled/redoubled premiums; doubled and redoubled overtricks and
-  undertricks).
-- Passed-out boards count as zero for both pairs.
+| Rule | What the app does |
+| --- | --- |
+| Contract score | Each deal scored on its own, duplicate style: trick points, overtricks, undertricks, +50 part-score, +300/+500 game, slams, doubled/redoubled, insult bonus. No part-score carry-over, no deal-4 bonus, no honours. |
+| Vulnerability | Deal 1 neither · deals 2 and 3 the **dealer's side** · deal 4 both. The dealer rotates N → E → S → W from the first dealer chosen when the table starts. |
+| Passed-out deal | Scores 0 and counts as one of the four. |
+| Sign convention | Stored as one number `ns_score`: **+ means North/South gained, − means East/West gained.** The screens show both sides (e.g. N/S +400 · E/W −400). |
+| Session result | Net points over the four deals (N/S points won minus E/W points won). |
+| Day ranking | Each pair's total net points across every board they played that day; ties broken by average per board. Each table session is one shared record, so no board is counted twice. |
+
+The score is calculated on the server (`lib/chicago.js`, called from
+`api/deal.js`). The phone shows a preview from the same file. Raw deal facts
+(contract, declarer, tricks, lead) are stored so scores can be recalculated.
+
+---
+
+## Using it at the table
+
+1. **Open the app** on your phone and type the access code once. The phone
+   stays let in for 30 days.
+2. **Start a table** (one person per table is enough): enter where you are
+   playing, the first board number, who deals first, which direction your
+   pair is sitting, and the four names. Names and venue are remembered.
+   - The other pair at the table can instead tap the table under **Join a
+     table already started** and choose North/South or East/West.
+3. **Enter each board:** tap *Enter board …*, then level → suit → (doubled?)
+   → declarer → adjust tricks with − / + → optionally the lead suit and card
+   → **Save result**. The score shows before you save.
+   - *Board was passed out* records a zero.
+4. **Correct a mistake:** tap the board's card, change it, Save. The same
+   record is updated. If the other phone saved or changed that board a moment
+   earlier, you're told what it says before anything is overwritten.
+5. **Other results:** compare every table's result for a board. The board
+   entry screen also shows other tables' results underneath.
+6. **Day summary:** rankings for today (or an earlier day). Tap a pair for
+   its board-by-board history.
+7. After four boards, tap **Start the next session**. The next starting
+   board is suggested automatically.
+
+---
 
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| `index.html` | single-page shell |
-| `app.js` | screens, Supabase + realtime, entry flow |
-| `bridge.js` | pure scoring + matchpoint engine (also used by tests) |
-| `bridge.test.mjs`  | 67 unit checks of the scoring engine |
-| `styles.css` | large-type, paper-and-ink theme |
-| `config.js` | your Supabase URL + anon key, and the shared club word |
-| `supabase/schema.sql` | run once in the Supabase SQL editor |
+| `index.html`, `app.js`, `styles.css`, `icon.svg` | The phone app |
+| `lib/chicago.js` | Scoring engine (no browser or database code) |
+| `api/login.js` | Checks the access code, sets a 30-day signed cookie |
+| `api/sessions.js` | Start, edit and list table sessions for a day |
+| `api/deal.js` | Save or correct one board; calculates the official score |
+| `api/_lib.js` | Shared server helpers (database access, cookie signing) |
+| `tests/chicago.test.mjs` | Scoring tests |
+| `tests/api.test.mjs` | Server tests against an in-memory database |
+| `supabase/migrations/20261012_chicago_tables.sql` | Adds the new tables |
+| `supabase/migrations/20261012_chicago_tables_ROLLBACK.sql` | Removes them again |
+| `supabase/legacy-duplicate-schema.sql` | The old app's schema, kept for reference |
+
+Run the tests (Node 18+): `npm test`
 
 ---
 
-## Set up
+## Database
 
-### 1. Supabase (the database)
+The new app uses three **new** tables. The old app's tables (`sessions`,
+`boards`, `results`, `day_controllers`) are untouched.
 
-1. Create a free project at https://supabase.com (you'll need it to stay on
-   free tier — this app's usage is tiny).
-2. Open **SQL Editor → New query**, paste the whole contents of
-   `supabase/schema.sql`, and run it. This creates the database tables,
-   row-level security, and turns on Realtime for the results.
-3. Pick a **club word** (a single word players type to get in). Put it in
-   `config.js` (`CLUB_CODE`) and in the `club_ok()` function in
-   `supabase/schema.sql`, then re-run the SQL.
-4. In **Project Settings → API**, copy:
-   - **Project URL**, and
-   - the **anon** public key.
-5. Paste both into `config.js` (replacing the `PASTE_…` placeholders).
+| Table | One row per |
+| --- | --- |
+| `chi_events` | Playing day |
+| `chi_sessions` | Four-deal session at one table: venue, first board, first dealer, four names |
+| `chi_deals` | Board played in a session: contract, declarer, tricks, lead, `ns_score`. Unique per session + deal number, so corrections never duplicate. Indexed by board number for comparisons. |
 
-### 2. GitHub + Vercel (the hosting)
+Board numbers identify a deal **within a playing day**. If separate events
+ever reuse board numbers on the same day, add an event name to `chi_events`
+(the table already allows several events per date).
 
-Either deploy the Vercel button style (import this repo, framework = "Other",
-build command empty) or, from the CLI:
+**Security:** Row Level Security is on and the public key has no access to
+the new tables. Only the server functions can read or write them, using
+`SUPABASE_SERVICE_ROLE_KEY`, which is stored in Vercel and never sent to
+phones.
 
-```bash
-vercel    # deploy once — no build step, the site is static
-```
+## Settings (Vercel → Settings → Environment Variables)
 
-That's it. Everyone opens the same URL on their phone. The organiser taps
-**Set up session** to start a session, then each pair types its name and taps
-**Join**.
-
-### Testing the scoring engine locally (no browser needed)
-
-```bash
-node bridge.test.mjs     # requires Node 18+
-```
-
-> No Node handy? The same check runs under macOS's JavaScriptCore:
-> `/System/Library/Frameworks/JavaScriptCore.framework/Versions/A/Helpers/jsc
-> --module-file=bridge.js bridge.test.mjs`
-
-### Previewing the UI locally
-
-```bash
-python3 -m http.server 8000      # then open localhost:8000 on your phone
-```
-
-## Using it at the table
-
-1. **Check in** — the first phone to set up for the day becomes the
-   **controller**. On the home screen, tap *Set up session*, pick how many boards
-   (default 24). Vulnerability is already correct; adjusting it is optional (tap
-   a board to change it). Once it is set, that button greys out for every other
-   phone — they just follow the boards the controller laid out.
-2. **Each pair joins** — type your pair name and choose N/S or E/W, then tap
-   *Join today's session*. The name is remembered on the phone. *Different pair?
-   Clear this phone* at the bottom of the home screen wipes it.
-3. **Enter a result** — tap a board on your list: bid level, strain, doubled?,
-   who declared, opening lead, tricks won. The score and live matchpoints appear
-   before you save. Leave everything blank if the board was passed out.
-4. After saving, the app shows **every result entered on that board** ("previous
-   games of the same cards"), then offers the next board.
-5. **Live results** — tap *Live results & standings* anytime; standings and a
-   per-board list (with each pair's opening lead) update as pairs enter theirs.
-6. **Start over** — only the controller can *Reset scores* (wipe results) or
-   *Delete today's session* (remove everything so all phones start fresh) on the
-   set-up screen.
-
-## Notes & trade-offs
-
-- **Security:** the app is hidden behind a shared **club word** typed once per
-  device. It is also sent as the `x-club-code` header, and the RLS policies
-  only accept writes that carry it, so strangers who find the URL can't post
-  results through the API. This is a friendly-club deterrent, not
-  password-grade — the word ships in the page source. Reads stay open because
-  Realtime needs them.
-- **Matchpoints** are plain within-board comparisons (`avLex`). Boards played at
-  unequal numbers of pairs don't get a Neuberg adjustment (club use is fine).
-- Each pair has one result per board (keyed by pair name), so last write wins
-  only if the same pair name is used on two phones at once.
+| Name | Needed | Notes |
+| --- | --- | --- |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase secret key. Never put it in the code. |
+| `ACCESS_CODE` | No | Defaults to `golf` |
+| `SUPABASE_URL` | No | Defaults to this project's Supabase address |
+| `APP_TIME_ZONE` | No | Defaults to `Australia/Melbourne` (decides what "today" is) |

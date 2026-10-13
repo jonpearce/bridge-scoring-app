@@ -432,3 +432,5 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .vulseg button.isvul.on {
   background: var(--vul-bg); color: var(--vul-ink); border: 2px solid var(--vul-ink);
 }
+/* Board panel: Contract and Lead on the left, Result (tricks + outcome) on the right */
+.facts .res { grid-column: 2; grid-row: 1 / span 2; }

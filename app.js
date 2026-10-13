@@ -331,8 +331,7 @@ function renderGame(r) {
     return `<div class="card board">${head}
       <dl class="facts">
         <div><dt>Contract</dt><dd>${contractHtml(x.d)}${x.d.passedOut ? '' : ` <span class="by">by ${seatName(x.d.declarer)}</span>`}</dd></div>
-        ${x.d.passedOut ? '' : `<div><dt>Result</dt><dd>${esc(sc.outcome)}</dd></div>
-        <div><dt>Contract winner</dt><dd>${short(sc.winner)}</dd></div>
+        ${x.d.passedOut ? '' : `<div class="res"><dt>Result</dt><dd>${x.d.tricks} trick${x.d.tricks === 1 ? '' : 's'},<br>${esc(sc.outcome)}</dd></div>
         <div><dt>Lead</dt><dd>${leadHtml(x.d)}</dd></div>`}
       </dl>
       <div class="scores">${scorePair(sc.nsScore)}</div>

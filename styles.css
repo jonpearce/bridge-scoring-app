@@ -422,3 +422,4 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .board .vultog { width: 100%; flex-wrap: nowrap; }
 .board .vultog .vb.tap { flex: 1 1 0; text-align: center; white-space: nowrap; }
 .logout { margin-top: 18px; }
+.bnum .played { font-family: var(--sans); font-size: 1.05rem; font-weight: 700; color: var(--pos); }

@@ -319,7 +319,7 @@ function renderGame(r) {
   const next = rows.find((x) => !x.d);
 
   const card = (x) => {
-    const head = `<div class="bhead"><span class="bnum">Board ${x.board}</span>
+    const head = `<div class="bhead"><span class="bnum">Board ${x.board}${x.d ? ' <span class="played">– played</span>' : ''}</span>
       <span class="vultog">${['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
     if (!x.d) {
       const isNext = next && next.n === x.n;

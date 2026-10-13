@@ -423,3 +423,12 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .board .vultog .vb.tap { flex: 1 1 0; text-align: center; white-space: nowrap; }
 .logout { margin-top: 18px; }
 .bnum .played { font-family: var(--sans); font-size: 1.05rem; font-weight: 700; color: var(--pos); }
+
+/* Softer vulnerability colour: pale rose with dark red text (13 Oct 2026) */
+:root { --vul-bg: #f7e1dd; --vul-ink: #8a2d24; --vul-line: #d6a39b; }
+.vb.on, .vb.tap.on {
+  background: var(--vul-bg); color: var(--vul-ink); border: 2px solid var(--vul-line);
+}
+.vulseg button.isvul.on {
+  background: var(--vul-bg); color: var(--vul-ink); border: 2px solid var(--vul-ink);
+}

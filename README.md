@@ -2,7 +2,7 @@
 
 A phone-first web app for recording social bridge games using **Chicago
 (four-deal) scoring**. One person from each pair enters results; every
-phone can compare results for the same board from other tables, and a Day
+phone can compare results for the same board from other games, and a Day
 summary ranks every pair.
 
 **Stack:** plain HTML/CSS/JavaScript (no build step) · Vercel (hosting and
@@ -72,7 +72,7 @@ recalculated.
 | `index.html`, `app.js`, `styles.css`, `icon.svg` | The phone app |
 | `lib/chicago.js` | Scoring engine (no browser or database code) |
 | `api/login.js` | Checks the access code, sets a 30-day signed cookie |
-| `api/sessions.js` | Start, edit and list table sessions for a day |
+| `api/sessions.js` | Start, edit and list games for a day |
 | `api/deal.js` | Save or correct one board; calculates the official score |
 | `api/_lib.js` | Shared server helpers (database access, cookie signing) |
 | `tests/chicago.test.mjs` | Scoring tests |

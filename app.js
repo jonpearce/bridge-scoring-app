@@ -175,8 +175,10 @@ function renderPlay() {
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1><p class="muted">${fmtDate(state.data.today)}</p></header>
     <a class="btn primary big block" href="#/new">Set up a new table</a>
-    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`);
+    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>
+    <button class="btn ghost block logout" id="logoutPlay">Log out</button>`);
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));
+  document.getElementById('logoutPlay').onclick = () => confirmLogout();
 }
 
 function chooseSide(sessionId) {
@@ -365,6 +367,7 @@ function renderGame(r) {
       ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this table</button>' : ''}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
+      <button class="btn ghost block logout" id="logoutPlay">Log out</button>
     </div>`);
 
   const startNew = () => {
@@ -382,6 +385,7 @@ function renderGame(r) {
     });
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
+  document.getElementById('logoutPlay').onclick = () => confirmLogout();
   $app.querySelectorAll('[data-vultog]').forEach((b) => (b.onclick = () => {
     const [n, k] = b.dataset.vultog.split(':');
     const cur = rows[Number(n) - 1].vul;

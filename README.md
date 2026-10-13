@@ -65,7 +65,7 @@ recalculated.
    at the bottom; boards already saved are kept. Each new day starts fresh on
    its own.
 
-8. **Log out:** at the bottom of **Day summary** or the results screen, tap **Log out** (for
+8. **Log out:** at the bottom of the Play screen, the results screen or **Day summary**, tap **Log out** (for
    example to log back in with the organiser code).
 9. **Organiser (super-user):** log in with the organiser code instead of the
    players' code. On **Day summary**, an *Organiser* section lists every table

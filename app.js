@@ -312,7 +312,7 @@ function renderGame(r) {
 
   const card = (x) => {
     const head = `<div class="bhead"><span class="bnum">Board ${x.board}</span>
-      <button type="button" class="vulbtn" data-vulfor="${x.n}" aria-label="Vulnerability for board ${x.board}: ${vulnerabilityText(x.vul)}. Tap to change">${vulBadge(x.vul)}<span class="chg">Change</span></button></div>`;
+      <span class="vultog">${['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
     if (!x.d) return `<div class="card board todo">${head}
       <p class="muted">Deal ${x.n} · Dealer ${seatName(x.dealer)}</p>
       <a class="btn primary block" href="#/deal/${s.id}/${x.n}">Enter result ›</a></div>`;
@@ -362,46 +362,40 @@ function renderGame(r) {
     go('#/new');
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
-  $app.querySelectorAll('[data-vulfor]').forEach((b) => (b.onclick = () => chooseVul(s, Number(b.dataset.vulfor))));
+  $app.querySelectorAll('[data-vultog]').forEach((b) => (b.onclick = () => {
+    const [n, k] = b.dataset.vultog.split(':');
+    const cur = rows[Number(n) - 1].vul;
+    setVul(s, Number(n), { ...cur, [k]: !cur[k] });
+  }));
 }
 
-// Change vulnerability from the game screen. Unplayed board: remembered for
-// when its result is entered. Saved board: re-saved and re-scored straight away.
+// Change vulnerability straight from a board tile. Unplayed board: remembered
+// for when its result is entered. Saved board: re-saved and re-scored at once.
 async function rerenderKeepScroll() { const y = window.scrollY; await render(); window.scrollTo(0, y); }
 
-function chooseVul(s, n) {
+async function setVul(s, n, v) {
   const d = s.deals.find((x) => x.dealNo === n);
   const draftKey = `draft:${s.id}:${n}`;
-  const draft = store.get(draftKey);
-  const def = vulnerabilityFor(n, s.firstDealer);
-  const cur = d ? vulForDeal(d, s.firstDealer)
-    : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : def);
-  sheet(`<h2>Board ${boardNumberFor(n, s.startBoard)}: who is vulnerable?</h2>
-    ${vulChoiceButtons(vulKey(cur))}
-    <p class="muted">Usual for deal ${n}: ${vulnerabilityText(def)}.</p>`, (root) => root.querySelectorAll('[data-vulset]').forEach((b) => (b.onclick = async () => {
-      const v = vulFromKey(b.dataset.vulset);
-      closeSheet();
-      if (!d) {
-        store.set(draftKey, { ...(draft || {}), vulNs: v.ns, vulEw: v.ew });
-        toast(`Board ${boardNumberFor(n, s.startBoard)}: ${vulnerabilityText(v)}`);
-        // show the change on the card
-        rerenderKeepScroll();
-        return;
-      }
-      try {
-        const body = { sessionId: s.id, dealNo: n, passedOut: d.passedOut, level: d.level, strain: d.strain, doubled: d.doubled,
-          declarer: d.declarer, tricks: d.tricks, leadSuit: d.leadSuit, leadRank: d.leadRank, vulNs: v.ns, vulEw: v.ew, expectedUpdatedAt: d.updatedAt };
-        const out = await api('deal', { method: 'PUT', body });
-        const live = sessionById(s.id) || s;   // the day may have been refreshed meanwhile
-        live.deals = live.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, c) => a.dealNo - c.dealNo);
-        const sc = scoreDeal(out.deal, s.firstDealer);
-        toast(`Board ${out.deal.boardNum}: ${vulnerabilityText(v)} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
-        rerenderKeepScroll();
-      } catch (e) {
-        toast(e.status === 409 ? 'This board was just changed on another phone. Please check it.' : e.message, 'error');
-        loadDay().then(rerenderKeepScroll).catch(() => {});
-      }
-    })));
+  const board = boardNumberFor(n, s.startBoard);
+  if (!d) {
+    store.set(draftKey, { ...(store.get(draftKey) || {}), vulNs: v.ns, vulEw: v.ew });
+    toast(`Board ${board}: ${vulnerabilityText(v)}`);
+    rerenderKeepScroll();
+    return;
+  }
+  try {
+    const body = { sessionId: s.id, dealNo: n, passedOut: d.passedOut, level: d.level, strain: d.strain, doubled: d.doubled,
+      declarer: d.declarer, tricks: d.tricks, leadSuit: d.leadSuit, leadRank: d.leadRank, vulNs: v.ns, vulEw: v.ew, expectedUpdatedAt: d.updatedAt };
+    const out = await api('deal', { method: 'PUT', body });
+    const live = sessionById(s.id) || s;   // the day may have been refreshed meanwhile
+    live.deals = live.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, c) => a.dealNo - c.dealNo);
+    const sc = scoreDeal(out.deal, s.firstDealer);
+    toast(`Board ${board}: ${vulnerabilityText(v)} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
+    rerenderKeepScroll();
+  } catch (e) {
+    toast(e.status === 409 ? 'This board was just changed on another phone. Please check it.' : e.message, 'error');
+    loadDay().then(rerenderKeepScroll).catch(() => {});
+  }
 }
 
 function totalsCard(t) {
@@ -456,7 +450,7 @@ function drawEntry() {
   const vulCard = `<section class="card keys">
       <h2 class="kh">Who is vulnerable?</h2>
       ${vulChoiceButtons(vulKey({ ns: e.vulNs, ew: e.vulEw }))}
-      ${changed ? `<p class="small warn">Changed from the usual for this deal (${vulnerabilityText(def)}). <button type="button" class="link" data-act="vulreset">Put it back</button></p>` : ''}
+      ${changed ? `<p class="warn oneline">Changed from the usual for this deal (${vulnerabilityText(def).replace('vulnerable', 'vul')}). <button type="button" class="link" data-act="vulreset">(Undo)</button></p>` : ''}
     </section>`;
   if (e.passedOut) {
     box.innerHTML = `<section class="card center"><p class="passed">Passed out</p><p class="muted">No contract. Nobody scores on this board.</p>

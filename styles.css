@@ -394,3 +394,11 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .vulseg button.isvul.on { background: var(--red); border-color: var(--red); color: #fff; }
 .vulseg button.nv.on { background: var(--green); border-color: var(--green); color: #fff; }
 .sheet .vulseg { margin: 4px 0; }
+
+/* Tile vulnerability: two tap-to-toggle buttons (13 Oct 2026) */
+.vultog { display: flex; gap: 6px; flex-wrap: wrap; }
+.vb.tap { min-height: 44px; padding: 8px 12px; font-size: .95rem; cursor: pointer; border-width: 2px; border-style: dashed; }
+.vb.tap.on { border-style: solid; }
+.vb.tap:active { transform: scale(.97); }
+.warn.oneline { font-size: .95rem; margin: 2px 0 0; line-height: 1.35; }
+.warn.oneline .link { font-size: inherit; padding: 6px 0; }

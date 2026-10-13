@@ -46,7 +46,7 @@ recalculated.
    board number and who deals first. Names are remembered.
    - The other pair can instead tap the game under **Join a game already
      started** and choose North/South or East/West.
-3. **Enter each board:** tap *Enter board …*, then (if needed) change the
+3. **Enter each board:** tap *Enter results for board …*, then (if needed) change the
    vulnerability, then level → suit → (doubled?) → declarer → adjust tricks
    with − / + → optionally the lead suit and card → **Save result**. The
    score shows before you save.

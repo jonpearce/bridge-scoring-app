@@ -344,7 +344,7 @@ function renderGame(r) {
       ${isMine ? `<p>You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong></p>` : ''}
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
-    ${next ? `<a class="btn primary big block" href="#/deal/${s.id}/${next.n}">Enter board ${next.board}</a>` : ''}
+    ${next ? `<a class="btn primary big block" href="#/deal/${s.id}/${next.n}">Enter results for board ${next.board}</a>` : ''}
     ${done ? totalsCard(t) : ''}
     ${done === 4 ? '<button class="btn primary big block" data-newgame>Start a new game</button>' : ''}
     <div class="boards">${rows.map(card).join('')}</div>

@@ -431,6 +431,21 @@ function totalsCard(t) {
 // =============================================================
 //  Board entry — designed for a few taps, one hand
 // =============================================================
+// Shared "Log out" confirmation (Day summary and results screen)
+function confirmLogout(extra = '') {
+  sheet(`<h2>Log out of this phone?</h2>
+    <p>You’ll need the access code to get back in. Saved results are not affected.${extra}</p>
+    <button class="btn primary big block" id="yes">Yes, log out</button>`, (root) => {
+    root.querySelector('#yes').onclick = async () => {
+      closeSheet();
+      try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
+      store.del('my'); store.del('lastSession');
+      state.admin = false; state.data = null;
+      go('#/login');
+    };
+  });
+}
+
 function renderEntry(r) {
   const s = sessionById(r.a);
   const n = Number(r.b);
@@ -455,9 +470,11 @@ function renderEntry(r) {
     ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
     <div id="entry"></div>
     <section class="card"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
+    <button class="btn ghost block logout" id="logoutEntry">Log out</button>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   drawEntry();
   document.getElementById('saveBtn').onclick = () => saveEntry(draftKey);
+  document.getElementById('logoutEntry').onclick = () => confirmLogout(' This board hasn’t been saved unless you tapped Save result.');
 }
 
 function drawEntry() {
@@ -676,19 +693,7 @@ async function renderDay(r) {
     ${state.admin ? organiserPanel(data) : '<button class="btn ghost block logout" id="logout">Log out</button>'}`);
   wireDayPicker('day');
   if (state.admin) wireOrganiser(data);
-  document.getElementById('logout')?.addEventListener('click', () => {
-    sheet(`<h2>Log out of this phone?</h2>
-      <p>You’ll need the access code to get back in. Saved results are not affected.</p>
-      <button class="btn primary big block" id="yes">Yes, log out</button>`, (root) => {
-      root.querySelector('#yes').onclick = async () => {
-        closeSheet();
-        try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
-        store.del('my'); store.del('lastSession');
-        state.admin = false; state.data = null;
-        go('#/login');
-      };
-    });
-  });
+  document.getElementById('logout')?.addEventListener('click', () => confirmLogout());
 }
 
 // ---------- organiser (super-user) tools: only on phones logged in with the organiser code ----------

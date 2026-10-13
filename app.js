@@ -131,7 +131,7 @@ function vulBadge(v) {
 // =============================================================
 function renderLogin() {
   $app.innerHTML = `<main class="screen login">
-    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Chicago Bridge</h1><p class="muted">Four-deal scoring for our social games</p></div>
+    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Chicago Bridge</h1><p class="muted">Four-deal scoring for social bridge</p></div>
     <form class="card" id="loginForm">
       <label for="code" class="lbl">Access code</label>
       <input id="code" class="input big" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
@@ -171,7 +171,7 @@ function renderPlay() {
           <span class="rb-names"><span><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}</span><span><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</span></span>
           <span class="pill ${n === 4 ? 'done' : ''}">${n === 4 ? 'Finished' : `${n} of 4`}</span></button>`;
       }).join('')
-    : '<p class="muted">No games have started yet today.</p>';
+    : '<p class="muted">No tables have started yet today.</p>';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1><p class="muted">${fmtDate(state.data.today)}</p></header>
     <a class="btn primary big block" href="#/new">Set up a new table</a>
@@ -272,7 +272,7 @@ function renderNew(r) {
       store.set('my', { date: state.data.today, sessionId: out.session.id, side });
       store.set('lastSession', { startBoard: out.session.startBoard, side });
       upsertSession(out.session);
-      toast(editing ? 'Names saved' : 'Game started');
+      toast(editing ? 'Names saved' : 'Table started');
       go(`#/s/${out.session.id}`);
     } catch (e) {
       document.getElementById('formErr').textContent = e.message;
@@ -307,7 +307,7 @@ function renderGame(r) {
   if (!s) {
     // The organiser may have deleted this game, or cleared the day.
     if (mine()?.sessionId === r.a) store.del('my');
-    $app.innerHTML = shell('play', `<div class="card"><h2>This game is no longer here</h2>
+    $app.innerHTML = shell('play', `<div class="card"><h2>This table is no longer here</h2>
       <p>It may have been cleared by the organiser.</p><a class="btn primary big block" href="#/play">Go to the Play screen</a></div>`);
     return;
   }
@@ -360,8 +360,8 @@ function renderGame(r) {
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <div class="stack foot">
-      ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this game</button>' : ''}
-      ${isMine ? '' : '<button class="btn block" id="claim">This is my game</button>'}
+      ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this table</button>' : ''}
+      ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
     </div>`);
 
@@ -373,8 +373,8 @@ function renderGame(r) {
   $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
     if (done === 4) return startNew();
     // In-app question (pop-up dialogs are blocked in some browsers)
-    sheet(`<h2>Leave this game?</h2>
-      <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this game from the Play screen.</p>
+    sheet(`<h2>Leave this table?</h2>
+      <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this table from the Play screen.</p>
       <button class="btn primary big block" id="leaveYes">Yes, set up a new table</button>`, (root) => {
       root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
     });
@@ -447,13 +447,13 @@ function renderEntry(r) {
 
   $app.innerHTML = shell('play', `
     <header class="entry-head">
-      <a href="#/s/${s.id}" class="back">‹ Back to the game</a>
+      <a href="#/s/${s.id}" class="back">‹ Back to the table</a>
       <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
-      <nav class="dealnav" aria-label="Boards in this game">${[1, 2, 3, 4].map((k) => `<a href="#/deal/${s.id}/${k}" class="${k === n ? 'on' : ''} ${s.deals.some((d) => d.dealNo === k) ? 'done' : ''}">${boardNumberFor(k, s.startBoard)}</a>`).join('')}</nav>
+      <nav class="dealnav" aria-label="Boards at this table">${[1, 2, 3, 4].map((k) => `<a href="#/deal/${s.id}/${k}" class="${k === n ? 'on' : ''} ${s.deals.some((d) => d.dealNo === k) ? 'done' : ''}">${boardNumberFor(k, s.startBoard)}</a>`).join('')}</nav>
     </header>
     ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
     <div id="entry"></div>
-    <section class="card"><h2>On other games</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
+    <section class="card"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   drawEntry();
   document.getElementById('saveBtn').onclick = () => saveEntry(draftKey);
@@ -595,13 +595,13 @@ function playsOfBoard(board, sessions) {
 
 function othersOnBoard(board, mySessionId) {
   const plays = playsOfBoard(board, state.data.sessions).filter((p) => p.s.id !== mySessionId);
-  if (!plays.length) return '<p class="muted">No other game has recorded this board yet.</p>';
-  return `<p class="muted">${plays.length} other game${plays.length > 1 ? 's' : ''}</p>` + plays.map((p) => playCard(p)).join('');
+  if (!plays.length) return '<p class="muted">No other table has recorded this board yet.</p>';
+  return `<p class="muted">${plays.length} other table${plays.length > 1 ? 's' : ''}</p>` + plays.map((p) => playCard(p)).join('');
 }
 
 function playCard({ s, d, sc }, highlight = false) {
   return `<div class="play ${highlight ? 'mine' : ''}">
-    ${highlight ? '<span class="pill">Your game</span>' : ''}
+    ${highlight ? '<span class="pill">Your table</span>' : ''}
     <p class="pl-names"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
     <p class="pl-res">${contractHtml(d)}${d.passedOut ? '' : ` by ${seatName(d.declarer)} · ${d.tricks} tricks · lead ${leadHtml(d)}`}</p>
     <p class="muted">${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + esc(sc.outcome)}</p>
@@ -637,9 +637,9 @@ async function renderOthers(r) {
   const myBoards = new Set(m && data.date === state.data.today ? (sessionById(m.sessionId)?.deals || []).map((d) => d.boardNum) : []);
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the game' : 'Back'}</a><h1>Other results</h1>${dayPicker(data)}</header>
-    <p class="muted">Tap a board to compare every game’s result for that board.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} game${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
+    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${dayPicker(data)}</header>
+    <p class="muted">Tap a board to compare every table’s result for that board.</p>
+    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded on this day yet.</p></div>'}`);
   wireDayPicker('others');
 }
@@ -651,7 +651,7 @@ async function renderBoard(r) {
   const plays = playsOfBoard(board, data.sessions);
   plays.sort((a, b) => (b.s.id === m?.sessionId) - (a.s.id === m?.sessionId));
   $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/others/${data.date}" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${fmtDate(data.date)} · ${plays.length} game${plays.length === 1 ? '' : 's'}</p></header>
+    <header class="top"><a href="#/others/${data.date}" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${fmtDate(data.date)} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
     <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
 }
 
@@ -663,12 +663,12 @@ async function renderDay(r) {
   const rows = daySummary(data.sessions);
   const games = data.sessions.length;
   $app.innerHTML = shell('day', `
-    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the game' : 'Back'}</a><h1>Day summary</h1>${dayPicker(data)}</header>
-    <p class="muted">${games} game${games === 1 ? '' : 's'}. Pairs are ranked by the total points they won.</p>
+    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${dayPicker(data)}</header>
+    <p class="muted">${games} table${games === 1 ? '' : 's'}. Pairs are ranked by the total points they won.</p>
     ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}/${data.date}">
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}</strong>
-          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} game${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
+          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
           <span class="muted">Average ${x.avgPerBoard} a board</span></span>
         <span class="rv">${x.points}</span></a>`).join('')
       : '<div class="card"><p class="muted">No results yet for this day.</p></div>'}
@@ -699,8 +699,8 @@ function organiserPanel(data) {
         <span><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong><br>
         <span class="muted">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></span>
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
-      <button class="btn danger big block" id="clearDay">Clear all ${games.length} game${games.length === 1 ? '' : 's'} on this day</button>`
-      : '<p class="muted">No games on this day.</p>'}
+      <button class="btn danger big block" id="clearDay">Clear all ${games.length} table${games.length === 1 ? '' : 's'} on this day</button>`
+      : '<p class="muted">No tables on this day.</p>'}
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
 }
@@ -717,13 +717,13 @@ function wireOrganiser(data) {
   };
   $app.querySelectorAll('[data-delgame]').forEach((b) => (b.onclick = () => {
     const g = data.sessions.find((x) => x.id === b.dataset.delgame);
-    sheet(`<h2>Delete this game?</h2>
+    sheet(`<h2>Delete this table?</h2>
       <p><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong>, boards ${g.startBoard}–${g.startBoard + 3}.</p>
       <p>Its ${g.deals.length} saved board${g.deals.length === 1 ? '' : 's'} will be removed for everyone. This can’t be undone.</p>
-      <button class="btn danger big block" id="yes">Yes, delete this game</button>`, (root) => {
+      <button class="btn danger big block" id="yes">Yes, delete this table</button>`, (root) => {
       root.querySelector('#yes').onclick = async () => {
         closeSheet();
-        try { await api('admin', { method: 'POST', body: { action: 'deleteGame', id: g.id } }); await after('Game deleted'); }
+        try { await api('admin', { method: 'POST', body: { action: 'deleteGame', id: g.id } }); await after('Table deleted'); }
         catch (e) { toast(e.message, 'error'); }
       };
     });
@@ -731,11 +731,11 @@ function wireOrganiser(data) {
   document.getElementById('clearDay')?.addEventListener('click', () => {
     const n = data.sessions.length, boards = data.sessions.reduce((t, g) => t + g.deals.length, 0);
     sheet(`<h2>Clear everything for ${data.date === state.data.today ? 'today' : esc(fmtDate(data.date))}?</h2>
-      <p>This deletes <strong>all ${n} game${n === 1 ? '' : 's'}</strong> and <strong>${boards} saved board${boards === 1 ? '' : 's'}</strong> for everyone, so you can start again. This can’t be undone.</p>
+      <p>This deletes <strong>all ${n} table${n === 1 ? '' : 's'}</strong> and <strong>${boards} saved board${boards === 1 ? '' : 's'}</strong> for everyone, so you can start again. This can’t be undone.</p>
       <button class="btn danger big block" id="yes">Yes, clear everything</button>`, (root) => {
       root.querySelector('#yes').onclick = async () => {
         closeSheet();
-        try { const out = await api('admin', { method: 'POST', body: { action: 'clearDay', date: data.date } }); await after(`Cleared ${out.deletedGames} game${out.deletedGames === 1 ? '' : 's'}`); }
+        try { const out = await api('admin', { method: 'POST', body: { action: 'clearDay', date: data.date } }); await after(`Cleared ${out.deletedGames} table${out.deletedGames === 1 ? '' : 's'}`); }
         catch (e) { toast(e.message, 'error'); }
       };
     });

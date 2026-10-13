@@ -11,9 +11,9 @@ export default handler({
     const b = await readJson(req);
 
     if (b.action === 'deleteGame') {
-      if (!UUID.test(b.id || '')) throw new HttpError(400, 'Missing game');
+      if (!UUID.test(b.id || '')) throw new HttpError(400, 'Missing table');
       const gone = await db(`chi_sessions?id=eq.${b.id}&select=id,event_id`, { method: 'DELETE', prefer: 'return=representation' });
-      if (!gone.length) throw new HttpError(404, 'That game has already been deleted.');
+      if (!gone.length) throw new HttpError(404, 'That table has already been deleted.');
       await removeEmptyEvent(gone[0].event_id);
       return send(res, 200, { deletedGames: 1 });
     }

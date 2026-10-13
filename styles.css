@@ -415,3 +415,9 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .org-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
 .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
 .btn.small-btn { min-height: 48px; padding: 8px 14px; font-size: 1rem; }
+
+/* Board tiles: vulnerability buttons always on their own row under the
+   heading, so the layout doesn't jump when one is tapped (13 Oct 2026) */
+.board .bhead { flex-direction: column; align-items: flex-start; gap: 8px; }
+.board .vultog { width: 100%; flex-wrap: nowrap; }
+.board .vultog .vb.tap { flex: 1 1 0; text-align: center; white-space: nowrap; }

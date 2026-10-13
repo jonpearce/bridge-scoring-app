@@ -313,9 +313,12 @@ function renderGame(r) {
   const card = (x) => {
     const head = `<div class="bhead"><span class="bnum">Board ${x.board}</span>
       <span class="vultog">${['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
-    if (!x.d) return `<div class="card board todo">${head}
-      <p class="muted">Deal ${x.n} · Dealer ${seatName(x.dealer)}</p>
-      <a class="btn primary block" href="#/deal/${s.id}/${x.n}">Enter result ›</a></div>`;
+    if (!x.d) {
+      const isNext = next && next.n === x.n;
+      return `<div class="card board todo ${isNext ? 'next' : ''}">${head}
+      <p class="muted">${isNext ? '<strong class="nextlbl">Next to enter</strong> · ' : ''}Deal ${x.n} · Dealer ${seatName(x.dealer)}</p>
+      <a class="btn block ${isNext ? 'primary' : ''}" href="#/deal/${s.id}/${x.n}">Enter result ›</a></div>`;
+    }
     const sc = x.scored;
     return `<div class="card board">${head}
       <dl class="facts">
@@ -344,22 +347,29 @@ function renderGame(r) {
       ${isMine ? `<p>You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong></p>` : ''}
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
-    ${next ? `<a class="btn primary big block" href="#/deal/${s.id}/${next.n}">Enter results for board ${next.board}</a>` : ''}
     ${done ? totalsCard(t) : ''}
-    ${done === 4 ? '<button class="btn primary big block" data-newgame>Start a new game</button>' : ''}
+    ${done === 4 ? '<button class="btn primary big block" data-newgame>All 4 boards done: start a new game</button>' : ''}
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <div class="stack foot">
-      ${done < 4 ? '<button class="btn big block" data-newgame>Start a new game</button>' : ''}
+      ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this game</button>' : ''}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my game</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
     </div>`);
 
-  $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
-    if (done < 4 && !confirm(`This game has ${done} of 4 boards entered.\n\nStart a new game anyway? The boards already saved are kept.`)) return;
+  const startNew = () => {
     store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS' });
     store.del('my');
     go('#/new');
+  };
+  $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
+    if (done === 4) return startNew();
+    // In-app question (pop-up dialogs are blocked in some browsers)
+    sheet(`<h2>Leave this game?</h2>
+      <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this game from the Play screen.</p>
+      <button class="btn primary big block" id="leaveYes">Yes, start a new game</button>`, (root) => {
+      root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
+    });
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
   $app.querySelectorAll('[data-vultog]').forEach((b) => (b.onclick = () => {
@@ -450,7 +460,7 @@ function drawEntry() {
   const vulCard = `<section class="card keys">
       <h2 class="kh">Who is vulnerable?</h2>
       ${vulChoiceButtons(vulKey({ ns: e.vulNs, ew: e.vulEw }))}
-      ${changed ? `<p class="warn oneline">Changed from the usual for this deal (${vulnerabilityText(def).replace('vulnerable', 'vul')}). <button type="button" class="link" data-act="vulreset">(Undo)</button></p>` : ''}
+      ${changed ? `<p class="warn oneline">Not the usual (${vulnerabilityText(def).replace('vulnerable', 'vul')}). <button type="button" class="link" data-act="vulreset">(Undo)</button></p>` : ''}
     </section>`;
   if (e.passedOut) {
     box.innerHTML = `<section class="card center"><p class="passed">Passed out</p><p class="muted">No contract. Nobody scores on this board.</p>
@@ -556,7 +566,9 @@ async function saveEntry(draftKey) {
         const s = sessionById(sessionId);
         s.deals = s.deals.filter((x) => x.dealNo !== n).concat(cur);
         const sc = scoreDeal(cur, s.firstDealer);
-        alert(`This board was saved on another phone as ${contractText(cur)}${cur.passedOut ? '' : ' by ' + seatName(cur.declarer) + ', ' + outcomeText(cur)}${sc.scoredBy ? ` (${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)})` : ''}.\n\nYour entry is still on screen. Tap Save again only if yours is the correct one.`);
+        sheet(`<h2>Saved on another phone</h2>
+          <p>This board was just saved as <strong>${esc(contractText(cur))}${cur.passedOut ? '' : ' by ' + seatName(cur.declarer) + ', ' + esc(outcomeText(cur))}</strong>${sc.scoredBy ? ` (${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)})` : ''}.</p>
+          <p>Your entry is still on screen. Tap Save again only if yours is the correct one.</p>`);
       } else {
         toast(e.message, 'error');
       }
@@ -617,7 +629,7 @@ async function renderOthers(r) {
   const myBoards = new Set(m && data.date === state.data.today ? (sessionById(m.sessionId)?.deals || []).map((d) => d.boardNum) : []);
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
-    <header class="top"><h1>Other results</h1>${dayPicker(data)}</header>
+    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the game' : 'Back'}</a><h1>Other results</h1>${dayPicker(data)}</header>
     <p class="muted">Tap a board to compare every game’s result.</p>
     ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} game${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded on this day yet.</p></div>'}`);
@@ -643,7 +655,7 @@ async function renderDay(r) {
   const rows = daySummary(data.sessions);
   const games = data.sessions.length;
   $app.innerHTML = shell('day', `
-    <header class="top"><h1>Day summary</h1>${dayPicker(data)}</header>
+    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the game' : 'Back'}</a><h1>Day summary</h1>${dayPicker(data)}</header>
     <p class="muted">${games} game${games === 1 ? '' : 's'}. Pairs are ranked by the total points they won.</p>
     ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}/${data.date}">
         <span class="rk">${x.rank}</span>

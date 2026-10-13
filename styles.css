@@ -402,3 +402,8 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .vb.tap:active { transform: scale(.97); }
 .warn.oneline { font-size: .95rem; margin: 2px 0 0; line-height: 1.35; }
 .warn.oneline .link { font-size: inherit; padding: 6px 0; }
+
+/* Next board to enter is highlighted in green; others are plain (13 Oct 2026) */
+.board.todo.next { border: 3px solid var(--green-2); border-style: solid; background: #eef6f0; }
+.nextlbl { color: var(--green); }
+.board.todo:not(.next) .btn { background: #fff; color: var(--green); border-color: var(--line); }

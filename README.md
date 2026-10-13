@@ -46,7 +46,7 @@ recalculated.
    board number and who deals first. Names are remembered.
    - The other pair can instead tap the game under **Join a game already
      started** and choose North/South or East/West.
-3. **Enter each board:** tap *Enter results for board …*, then (if needed) change the
+3. **Enter each board:** the next board to enter is highlighted in green; tap its *Enter result*, then (if needed) change the
    vulnerability, then level → suit → (doubled?) → declarer → adjust tricks
    with − / + → optionally the lead suit and card → **Save result**. The
    score shows before you save.
@@ -58,9 +58,10 @@ recalculated.
    entry screen also shows other games' results underneath.
 6. **Day summary:** rankings for today (or an earlier day). Tap a pair for
    its board-by-board history.
-7. **New game:** tap **Start a new game** on the game screen. It's the big
-   button once four boards are in, and always available at the bottom. The
-   next first board is suggested automatically. Each new day starts fresh on
+7. **New game (next four boards, usually new opponents):** once all four
+   boards are in, tap **All 4 boards done: start a new game**. The next first
+   board is suggested automatically. To stop part-way, use **Leave this game**
+   at the bottom; boards already saved are kept. Each new day starts fresh on
    its own.
 
 ---

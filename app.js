@@ -197,8 +197,11 @@ function chooseSide(sessionId) {
 function renderNew(r) {
   const editing = r.name === 'edit' ? sessionById(r.a) : null;
   const prefs = store.get('prefs', {});
-  const last = store.get('lastSession');
-  const mySide = editing ? (mine()?.side || 'NS') : (last?.side || 'NS');
+  const lastRaw = store.get('lastSession');
+  // Continue numbering only if that table is still here today; after the
+  // organiser clears the day, a log-out, or on a new day, start again at 1.
+  const last = lastRaw && lastRaw.date === state.data.today && sessionById(lastRaw.sessionId) ? lastRaw : null;
+  const mySide = editing ? (mine()?.side || 'NS') : (lastRaw?.side || 'NS');
   const nameList = [...new Set(state.data.sessions.flatMap((s) => [s.nsP1, s.nsP2, s.ewP1, s.ewP2]).concat(prefs.names || []))];
   const played = editing && editing.deals.length > 0;
   const v = editing
@@ -270,7 +273,7 @@ function renderNew(r) {
         : await api('sessions', { method: 'POST', body: { ...body, clientToken: token } });
       store.set('prefs', { names: [fd.us1, fd.us2] });
       store.set('my', { date: state.data.today, sessionId: out.session.id, side });
-      store.set('lastSession', { startBoard: out.session.startBoard, side });
+      store.set('lastSession', { startBoard: out.session.startBoard, side, sessionId: out.session.id, date: state.data.today });
       upsertSession(out.session);
       toast(editing ? 'Names saved' : 'Table started');
       go(`#/s/${out.session.id}`);
@@ -365,7 +368,7 @@ function renderGame(r) {
     </div>`);
 
   const startNew = () => {
-    store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS' });
+    store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, date: state.data.today });
     store.del('my');
     go('#/new');
   };
@@ -448,7 +451,6 @@ function renderEntry(r) {
     <header class="entry-head">
       <a href="#/s/${s.id}" class="back">‹ Back to the table</a>
       <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
-      <nav class="dealnav" aria-label="Boards at this table">${[1, 2, 3, 4].map((k) => `<a href="#/deal/${s.id}/${k}" class="${k === n ? 'on' : ''} ${s.deals.some((d) => d.dealNo === k) ? 'done' : ''}">${boardNumberFor(k, s.startBoard)}</a>`).join('')}</nav>
     </header>
     ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
     <div id="entry"></div>
@@ -498,8 +500,8 @@ function drawEntry() {
       </section>
       <section class="card keys">
         <h2 class="kh">Opening lead <span class="hint">(optional)</span></h2>
-        <div class="grid four">${SUITS.map((st) => btn('lsuit', st, suitHtml(st), e.leadSuit === st, 'suitkey')).join('')}</div>
         <div class="grid seven ranks">${LEAD_RANKS.map((rk) => btn('lrank', rk, rk, e.leadRank === rk)).join('')}</div>
+        <div class="grid four">${SUITS.map((st) => btn('lsuit', st, suitHtml(st), e.leadSuit === st, 'suitkey')).join('')}</div>
         ${e.leadSuit || e.leadRank ? '<button type="button" class="link" data-act="nolead">Clear the lead</button>' : ''}
       </section>
       <button type="button" class="btn ghost block" data-act="pass">Board was passed out</button>`;
@@ -681,6 +683,7 @@ async function renderDay(r) {
       root.querySelector('#yes').onclick = async () => {
         closeSheet();
         try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
+        store.del('my'); store.del('lastSession');
         state.admin = false; state.data = null;
         go('#/login');
       };
@@ -741,6 +744,7 @@ function wireOrganiser(data) {
   });
   document.getElementById('leaveOrg').onclick = async () => {
     try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
+    store.del('my'); store.del('lastSession');
     state.admin = false; state.data = null;
     go('#/login');
   };

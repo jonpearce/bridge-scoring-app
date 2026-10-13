@@ -48,7 +48,7 @@ recalculated.
      started** and choose North/South or East/West.
 3. **Enter each board:** the next board to enter is highlighted in green; tap its *Enter result*, then (if needed) change the
    vulnerability, then level → suit → (doubled?) → declarer → adjust tricks
-   with − / + → optionally the lead suit and card → **Save result**. The
+   with − / + → optionally the lead card and suit → **Save result**. The
    score shows before you save.
    - *Board was passed out* records no score.
 4. **Correct a mistake:** tap the board's card, change it, Save. The same
@@ -60,7 +60,8 @@ recalculated.
    its board-by-board history.
 7. **New table (next four boards, usually new opponents):** once all four
    boards are in, tap **All 4 boards done: set up a new table**. The next first
-   board is suggested automatically. To stop part-way, use **Leave this table**
+   board is suggested automatically (it goes back to board 1 after the organiser
+   clears the day, after logging out, or on a new day). To stop part-way, use **Leave this table**
    at the bottom; boards already saved are kept. Each new day starts fresh on
    its own.
 

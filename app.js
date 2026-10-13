@@ -131,7 +131,7 @@ function vulBadge(v) {
 // =============================================================
 function renderLogin() {
   $app.innerHTML = `<main class="screen login">
-    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Chicago Bridge</h1><p class="muted">Four-deal scoring for our social games</p></div>
+    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Chicago Bridge</h1><p class="muted">Four-deal scoring for our social games</p></div>
     <form class="card" id="loginForm">
       <label for="code" class="lbl">Access code</label>
       <input id="code" class="input big" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
@@ -174,8 +174,8 @@ function renderPlay() {
     : '<p class="muted">No games have started yet today.</p>';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1><p class="muted">${fmtDate(state.data.today)}</p></header>
-    <a class="btn primary big block" href="#/new">Start a new game</a>
-    <section class="card"><h2>Join a game already started</h2><p class="muted small">If the other pair has already set up your game, tap it here.</p><div class="stack">${list}</div></section>`);
+    <a class="btn primary big block" href="#/new">Set up a new table</a>
+    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`);
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));
 }
 
@@ -209,7 +209,7 @@ function renderNew(r) {
         us1: prefs.names?.[0] || '', us2: prefs.names?.[1] || '', them1: '', them2: '' };
 
   $app.innerHTML = shell('play', `
-    <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Change names' : 'Start a new game'}</h1></header>
+    <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Change names' : 'Set up a new table'}</h1></header>
     <form id="newForm" class="stack" autocomplete="off">
       <section class="card stack">
         <span class="lbl">Your pair is sitting</span>
@@ -356,7 +356,7 @@ function renderGame(r) {
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done ? totalsCard(t) : ''}
-    ${done === 4 ? '<button class="btn primary big block" data-newgame>All 4 boards done: start a new game</button>' : ''}
+    ${done === 4 ? '<button class="btn primary big block" data-newgame>All 4 boards done: set up a new table</button>' : ''}
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <div class="stack foot">
@@ -375,7 +375,7 @@ function renderGame(r) {
     // In-app question (pop-up dialogs are blocked in some browsers)
     sheet(`<h2>Leave this game?</h2>
       <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this game from the Play screen.</p>
-      <button class="btn primary big block" id="leaveYes">Yes, start a new game</button>`, (root) => {
+      <button class="btn primary big block" id="leaveYes">Yes, set up a new table</button>`, (root) => {
       root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
     });
   }));

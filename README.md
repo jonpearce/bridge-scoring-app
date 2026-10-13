@@ -1,4 +1,4 @@
-# Chicago Bridge — social four-deal scoring
+# Flinders Chicago Bridge — social four-deal scoring
 
 A phone-first web app for recording social bridge games using **Chicago
 (four-deal) scoring**. One person from each pair enters results; every
@@ -41,10 +41,10 @@ recalculated.
 
 1. **Open the app** and type the access code once. The phone stays let in
    for 30 days.
-2. **Start a new game** (one person per game is enough): choose whether your
+2. **Set up a new table** (one person per table is enough): choose whether your
    pair is North/South or East/West, type the four names, and check the first
    board number and who deals first. Names are remembered.
-   - The other pair can instead tap the game under **Join a game already
+   - The other pair can instead tap the game under **Join a table already
      started** and choose North/South or East/West.
 3. **Enter each board:** the next board to enter is highlighted in green; tap its *Enter result*, then (if needed) change the
    vulnerability, then level → suit → (doubled?) → declarer → adjust tricks
@@ -59,7 +59,7 @@ recalculated.
 6. **Day summary:** rankings for today (or an earlier day). Tap a pair for
    its board-by-board history.
 7. **New game (next four boards, usually new opponents):** once all four
-   boards are in, tap **All 4 boards done: start a new game**. The next first
+   boards are in, tap **All 4 boards done: set up a new table**. The next first
    board is suggested automatically. To stop part-way, use **Leave this game**
    at the bottom; boards already saved are kept. Each new day starts fresh on
    its own.

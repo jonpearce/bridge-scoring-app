@@ -672,9 +672,21 @@ async function renderDay(r) {
           <span class="muted">Average ${x.avgPerBoard} a board</span></span>
         <span class="rv">${x.points}</span></a>`).join('')
       : '<div class="card"><p class="muted">No results yet for this day.</p></div>'}
-    ${state.admin ? organiserPanel(data) : ''}`);
+    ${state.admin ? organiserPanel(data) : '<button class="btn ghost block logout" id="logout">Log out</button>'}`);
   wireDayPicker('day');
   if (state.admin) wireOrganiser(data);
+  document.getElementById('logout')?.addEventListener('click', () => {
+    sheet(`<h2>Log out of this phone?</h2>
+      <p>You’ll need the access code to get back in. Saved results are not affected.</p>
+      <button class="btn primary big block" id="yes">Yes, log out</button>`, (root) => {
+      root.querySelector('#yes').onclick = async () => {
+        closeSheet();
+        try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
+        state.admin = false; state.data = null;
+        go('#/login');
+      };
+    });
+  });
 }
 
 // ---------- organiser (super-user) tools: only on phones logged in with the organiser code ----------
@@ -689,7 +701,7 @@ function organiserPanel(data) {
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
       <button class="btn danger big block" id="clearDay">Clear all ${games.length} game${games.length === 1 ? '' : 's'} on this day</button>`
       : '<p class="muted">No games on this day.</p>'}
-    <button class="btn ghost block" id="leaveOrg">Leave organiser mode</button>
+    <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
 }
 

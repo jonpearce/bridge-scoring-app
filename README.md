@@ -64,11 +64,13 @@ recalculated.
    at the bottom; boards already saved are kept. Each new day starts fresh on
    its own.
 
-8. **Organiser (super-user):** log in with the organiser code instead of the
+8. **Log out:** at the bottom of **Day summary**, tap **Log out** (for
+   example to log back in with the organiser code).
+9. **Organiser (super-user):** log in with the organiser code instead of the
    players' code. On **Day summary**, an *Organiser* section lists every game
    that day with a **Delete** button, plus **Clear all games on this day** to
    start completely fresh. Both ask "are you sure?" first and can't be undone.
-   **Leave organiser mode** logs that phone out. Players never see these
+   **Leave organiser mode (log out)** logs that phone out. Players never see these
    buttons, and the server refuses organiser actions from player phones.
 
 ---

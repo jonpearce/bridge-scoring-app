@@ -421,3 +421,4 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .board .bhead { flex-direction: column; align-items: flex-start; gap: 8px; }
 .board .vultog { width: 100%; flex-wrap: nowrap; }
 .board .vultog .vb.tap { flex: 1 1 0; text-align: center; white-space: nowrap; }
+.logout { margin-top: 18px; }

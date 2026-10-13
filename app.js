@@ -115,6 +115,13 @@ function scorePair(nsScore) {
   return `<span class="sc ns ${ns ? 'won' : 'nil'}"><span class="tag ns">N/S</span> ${ns}</span>`
        + `<span class="sc ew ${ew ? 'won' : 'nil'}"><span class="tag ew">E/W</span> ${ew}</span>`;
 }
+const VUL_CHOICES = [['none', 'Neither'], ['ns', 'N/S'], ['ew', 'E/W'], ['both', 'Both']];
+const vulKey = (v) => (v.ns && v.ew ? 'both' : v.ns ? 'ns' : v.ew ? 'ew' : 'none');
+const vulFromKey = (k) => ({ ns: k === 'ns' || k === 'both', ew: k === 'ew' || k === 'both' });
+function vulChoiceButtons(current, attr = 'vulset') {
+  return `<div class="seg four vulseg" role="radiogroup" aria-label="Who is vulnerable">${VUL_CHOICES.map(([k, l]) =>
+    `<button type="button" role="radio" data-${attr}="${k}" aria-checked="${current === k}" class="${current === k ? 'on' : ''} ${k === 'none' ? 'nv' : 'isvul'}">${l}</button>`).join('')}</div>`;
+}
 function vulBadge(v) {
   return `<span class="vb ${v.ns ? 'on' : ''}">N/S ${v.ns ? 'Vul' : 'Not vul'}</span><span class="vb ${v.ew ? 'on' : ''}">E/W ${v.ew ? 'Vul' : 'Not vul'}</span>`;
 }
@@ -286,7 +293,9 @@ function upsertSession(s) {
 function dealsFor(s) {
   return [1, 2, 3, 4].map((n) => {
     const d = s.deals.find((x) => x.dealNo === n);
-    const vul = d ? vulForDeal(d, s.firstDealer) : vulnerabilityFor(n, s.firstDealer);
+    const draft = d ? null : store.get(`draft:${s.id}:${n}`);
+    const vul = d ? vulForDeal(d, s.firstDealer)
+      : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : vulnerabilityFor(n, s.firstDealer));
     return { n, board: boardNumberFor(n, s.startBoard), vul, dealer: dealerFor(n, s.firstDealer), d, scored: d ? scoreDeal(d, s.firstDealer) : null };
   });
 }
@@ -302,11 +311,13 @@ function renderGame(r) {
   const next = rows.find((x) => !x.d);
 
   const card = (x) => {
-    const head = `<div class="bhead"><span class="bnum">Board ${x.board}</span><span class="vul">${vulBadge(x.vul)}</span></div>`;
-    if (!x.d) return `<a class="card board todo" href="#/deal/${s.id}/${x.n}">${head}
-      <p class="muted">Deal ${x.n} · Dealer ${seatName(x.dealer)}</p><span class="btn ghost">Enter result ›</span></a>`;
+    const head = `<div class="bhead"><span class="bnum">Board ${x.board}</span>
+      <button type="button" class="vulbtn" data-vulfor="${x.n}" aria-label="Vulnerability for board ${x.board}: ${vulnerabilityText(x.vul)}. Tap to change">${vulBadge(x.vul)}<span class="chg">Change</span></button></div>`;
+    if (!x.d) return `<div class="card board todo">${head}
+      <p class="muted">Deal ${x.n} · Dealer ${seatName(x.dealer)}</p>
+      <a class="btn primary block" href="#/deal/${s.id}/${x.n}">Enter result ›</a></div>`;
     const sc = x.scored;
-    return `<a class="card board" href="#/deal/${s.id}/${x.n}" aria-label="Board ${x.board}, tap to correct">${head}
+    return `<div class="card board">${head}
       <dl class="facts">
         <div><dt>Contract</dt><dd>${contractHtml(x.d)}${x.d.passedOut ? '' : ` <span class="by">by ${seatName(x.d.declarer)}</span>`}</dd></div>
         ${x.d.passedOut ? '' : `<div><dt>Result</dt><dd>${esc(sc.outcome)}</dd></div>
@@ -314,7 +325,7 @@ function renderGame(r) {
         <div><dt>Lead</dt><dd>${leadHtml(x.d)}</dd></div>`}
       </dl>
       <div class="scores">${scorePair(sc.nsScore)}</div>
-      <span class="muted edit">Tap to correct ›</span></a>`;
+      <a class="btn block correct" href="#/deal/${s.id}/${x.n}">Correct this board ›</a></div>`;
   };
 
   const tableRows = rows.map((x) => `<tr>
@@ -351,6 +362,46 @@ function renderGame(r) {
     go('#/new');
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
+  $app.querySelectorAll('[data-vulfor]').forEach((b) => (b.onclick = () => chooseVul(s, Number(b.dataset.vulfor))));
+}
+
+// Change vulnerability from the game screen. Unplayed board: remembered for
+// when its result is entered. Saved board: re-saved and re-scored straight away.
+async function rerenderKeepScroll() { const y = window.scrollY; await render(); window.scrollTo(0, y); }
+
+function chooseVul(s, n) {
+  const d = s.deals.find((x) => x.dealNo === n);
+  const draftKey = `draft:${s.id}:${n}`;
+  const draft = store.get(draftKey);
+  const def = vulnerabilityFor(n, s.firstDealer);
+  const cur = d ? vulForDeal(d, s.firstDealer)
+    : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : def);
+  sheet(`<h2>Board ${boardNumberFor(n, s.startBoard)}: who is vulnerable?</h2>
+    ${vulChoiceButtons(vulKey(cur))}
+    <p class="muted">Usual for deal ${n}: ${vulnerabilityText(def)}.</p>`, (root) => root.querySelectorAll('[data-vulset]').forEach((b) => (b.onclick = async () => {
+      const v = vulFromKey(b.dataset.vulset);
+      closeSheet();
+      if (!d) {
+        store.set(draftKey, { ...(draft || {}), vulNs: v.ns, vulEw: v.ew });
+        toast(`Board ${boardNumberFor(n, s.startBoard)}: ${vulnerabilityText(v)}`);
+        // show the change on the card
+        rerenderKeepScroll();
+        return;
+      }
+      try {
+        const body = { sessionId: s.id, dealNo: n, passedOut: d.passedOut, level: d.level, strain: d.strain, doubled: d.doubled,
+          declarer: d.declarer, tricks: d.tricks, leadSuit: d.leadSuit, leadRank: d.leadRank, vulNs: v.ns, vulEw: v.ew, expectedUpdatedAt: d.updatedAt };
+        const out = await api('deal', { method: 'PUT', body });
+        const live = sessionById(s.id) || s;   // the day may have been refreshed meanwhile
+        live.deals = live.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, c) => a.dealNo - c.dealNo);
+        const sc = scoreDeal(out.deal, s.firstDealer);
+        toast(`Board ${out.deal.boardNum}: ${vulnerabilityText(v)} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
+        rerenderKeepScroll();
+      } catch (e) {
+        toast(e.status === 409 ? 'This board was just changed on another phone. Please check it.' : e.message, 'error');
+        loadDay().then(rerenderKeepScroll).catch(() => {});
+      }
+    })));
 }
 
 function totalsCard(t) {
@@ -403,11 +454,8 @@ function drawEntry() {
   const btn = (attr, val, label, on, cls = '') => `<button type="button" class="key ${cls} ${on ? 'on' : ''}" data-${attr}="${val}" aria-pressed="${on}">${label}</button>`;
   const changed = e.vulNs !== def.ns || e.vulEw !== def.ew;
   const vulCard = `<section class="card keys">
-      <h2 class="kh">Vulnerable? <span class="hint">tap to change</span></h2>
-      <div class="grid two">
-        <button type="button" class="key vulkey ${e.vulNs ? 'vul' : ''}" data-vul="ns" aria-pressed="${e.vulNs}">N/S<br>${e.vulNs ? 'VULNERABLE' : 'Not vulnerable'}</button>
-        <button type="button" class="key vulkey ${e.vulEw ? 'vul' : ''}" data-vul="ew" aria-pressed="${e.vulEw}">E/W<br>${e.vulEw ? 'VULNERABLE' : 'Not vulnerable'}</button>
-      </div>
+      <h2 class="kh">Who is vulnerable?</h2>
+      ${vulChoiceButtons(vulKey({ ns: e.vulNs, ew: e.vulEw }))}
       ${changed ? `<p class="small warn">Changed from the usual for this deal (${vulnerabilityText(def)}). <button type="button" class="link" data-act="vulreset">Put it back</button></p>` : ''}
     </section>`;
   if (e.passedOut) {
@@ -460,8 +508,7 @@ function onEntryTap(ev) {
   else if (d.trick) { const t = e.level + 6 + e.diff + Number(d.trick); if (t >= 0 && t <= 13) e.diff += Number(d.trick); }
   else if (d.lsuit) e.leadSuit = e.leadSuit === d.lsuit ? null : d.lsuit;
   else if (d.lrank) e.leadRank = e.leadRank === d.lrank ? null : d.lrank;
-  else if (d.vul === 'ns') e.vulNs = !e.vulNs;
-  else if (d.vul === 'ew') e.vulEw = !e.vulEw;
+  else if (d.vulset) { const v = vulFromKey(d.vulset); e.vulNs = v.ns; e.vulEw = v.ew; }
   else if (d.act === 'vulreset') { e.vulNs = def.ns; e.vulEw = def.ew; }
   else if (d.act === 'nolead') { e.leadSuit = null; e.leadRank = null; }
   else if (d.act === 'pass') e.passedOut = true;

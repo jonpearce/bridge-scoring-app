@@ -380,3 +380,17 @@ h2 { font-size: 1.25rem; font-weight: 700; }
   .vulkey { font-size: .92rem; }
   .facts { grid-template-columns: 1fr; }
 }
+
+/* Board tiles: only the buttons are tappable (13 Oct 2026) */
+.vulbtn {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; margin: -6px -8px;
+  background: none; border: 2px dashed transparent; border-radius: 12px; cursor: pointer; font: inherit; color: inherit;
+}
+.vulbtn:active, .vulbtn:focus-visible { border-color: var(--gold); }
+.vulbtn .chg { font-size: .85rem; font-weight: 800; color: var(--green-2); text-decoration: underline; }
+.board .btn.correct { margin-top: 10px; }
+.board .btn.primary { margin-top: 8px; }
+.vulseg button { font-size: 1.05rem; min-height: 58px; }
+.vulseg button.isvul.on { background: var(--red); border-color: var(--red); color: #fff; }
+.vulseg button.nv.on { background: var(--green); border-color: var(--green); color: #fff; }
+.sheet .vulseg { margin: 4px 0; }

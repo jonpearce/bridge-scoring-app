@@ -21,7 +21,7 @@ small server functions in `/api`) · Supabase (database) · GitHub (code).
 | --- | --- |
 | Contract score | Each board scored on its own, duplicate style: trick points, overtricks, undertricks, +50 part-score, +300/+500 game, slams, doubled/redoubled, insult bonus. No part-score carry-over, no deal-4 bonus, no honours. |
 | Who scores | **Only one pair scores on each board.** Made: the declaring pair gets the points. Down: the defending pair gets the penalty. Nobody ever has a negative score. |
-| Vulnerability | Defaults to standard Chicago: deal 1 neither, deals 2 and 3 the **dealer's side**, deal 4 both (dealer rotates N → E → S → W from the first dealer). **It can be changed on the scoring screen for any board.** The vulnerability used is saved with the board. |
+| Vulnerability | Defaults to standard Chicago: deal 1 neither, deals 2 and 3 the **dealer's side**, deal 4 both (dealer rotates N → E → S → W from the first dealer). **It can be changed for any board — on the scoring screen, or by tapping the vulnerability on the board's tile on the game screen (choose Neither, N/S, E/W or Both).** The vulnerability used is saved with the board. |
 | Passed-out board | Nobody scores; it counts as one of the four. |
 | Game result | Each pair's total points over the four boards; the higher total wins by the difference. |
 | Day ranking | Total points each pair won over the day; ties broken by average points per board. Each game is one shared record, so no board is counted twice. |

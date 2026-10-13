@@ -310,3 +310,73 @@ table.mini { width: 100%; border-collapse: collapse; margin-top: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* =============================================================
+   Larger, bolder text for easier reading (13 Oct 2026).
+   Kept after the rules above so it takes priority.
+   ============================================================= */
+:root { --muted: #3f4b45; --tap: 56px; }
+body { font-size: 19px; font-weight: 500; line-height: 1.4; }
+h1 { font-size: 1.85rem; font-weight: 700; }
+h2 { font-size: 1.25rem; font-weight: 700; }
+.small { font-size: .95rem; }
+.lbl { font-size: 1.05rem; font-weight: 700; }
+.input { font-size: 1.15rem; font-weight: 600; }
+.btn { font-size: 1.1rem; font-weight: 700; }
+.btn.big { font-size: 1.2rem; min-height: 64px; }
+.seg button { font-size: 1.05rem; font-weight: 700; }
+.tag { font-size: .85rem; padding: 4px 7px; }
+.pill { font-size: .9rem; }
+.vb { font-size: .9rem; font-weight: 700; }
+.pairs { font-size: 1.2rem; font-weight: 700; line-height: 2; }
+.v { color: var(--muted); font-weight: 500; }
+.bnum { font-size: 1.35rem; }
+.bnum.big { font-size: 1.8rem; }
+.facts dt { font-size: .85rem; font-weight: 700; }
+.facts dd { font-size: 1.2rem; font-weight: 700; }
+.by { font-size: 1rem; font-weight: 600; }
+.sc { font-size: 1.3rem; font-weight: 800; }
+.sc.nil { opacity: .45; }
+.sc.won { box-shadow: inset 0 0 0 2px currentColor; }
+.tot strong { font-size: 1.6rem; }
+.net strong { font-size: 1.3rem; }
+.net span { font-weight: 700; color: var(--muted); }
+.dealnav a { font-size: 1.1rem; min-height: 46px; padding-top: 9px; }
+.kh { font-size: .95rem; font-weight: 800; color: var(--ink); }
+.hint { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.key { font-size: 1.4rem; font-weight: 800; }
+.key.small { font-size: 1rem; font-weight: 700; line-height: 1.15; padding: 4px; }
+.key.suitkey { font-size: 1.8rem; }
+.ranks .key { font-size: 1.2rem; min-height: 50px; }
+.decl .key { font-size: 1.05rem; font-weight: 800; min-height: 58px; }
+.tval strong { font-size: 2.5rem; }
+.tval span { font-size: 1.05rem; font-weight: 700; }
+.preview { font-size: 1.05rem; }
+.pv-c { font-size: 1.1rem; font-weight: 800; }
+.pv-s { font-size: 1.25rem; font-weight: 800; }
+.pl-res { font-size: 1.15rem; }
+.pl-names { font-weight: 700; line-height: 1.9; margin: 4px 0; }
+.rv { font-size: 1.5rem; font-weight: 800; color: var(--green); }
+.rn strong { font-size: 1.15rem; }
+.tab { font-size: .9rem; font-weight: 700; }
+.tab .ti { font-size: 1.3rem; }
+.toast { font-size: 1.05rem; }
+.note { font-size: 1rem; font-weight: 600; }
+.warn { color: #7a4b00; font-weight: 700; }
+.rb-names { display: grid; gap: 4px; font-weight: 700; }
+.grid.two { grid-template-columns: 1fr 1fr; }
+.vulkey { font-size: 1rem; line-height: 1.25; min-height: 64px; background: #fff; }
+.vulkey.vul { background: var(--red); border-color: var(--red); color: #fff; box-shadow: none; }
+.vulkey.on { box-shadow: none; }
+.results { font-size: 1rem; }
+.mini td { font-size: 1rem; font-weight: 600; }
+@media (max-width: 360px) {
+  body { font-size: 18px; }
+  .key { font-size: 1.2rem; }
+  .key.suitkey { font-size: 1.5rem; }
+  .key.small { font-size: .9rem; }
+  .decl .key { font-size: .95rem; }
+  .ranks .key { font-size: 1.05rem; }
+  .vulkey { font-size: .92rem; }
+  .facts { grid-template-columns: 1fr; }
+}

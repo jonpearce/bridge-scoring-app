@@ -1,8 +1,8 @@
 import { handler, send, readJson, requireAuth, db, HttpError, toDeal } from './_lib.js';
-import { scoreDeal, validateDeal, boardNumberFor, SCORING_VERSION } from '../lib/chicago.js';
+import { scoreDeal, validateDeal, boardNumberFor, vulnerabilityFor, SCORING_VERSION } from '../lib/chicago.js';
 
 // PUT /api/deal
-// { sessionId, dealNo, passedOut, level, strain, doubled, declarer, tricks, leadSuit, leadRank, expectedUpdatedAt }
+// { sessionId, dealNo, passedOut, level, strain, doubled, declarer, tricks, leadSuit, leadRank, vulNs, vulEw, expectedUpdatedAt }
 // The score is calculated HERE, on the server — the phone's figure is only a preview.
 // New result: refused (409) if another phone saved this deal first.
 // Correction: send expectedUpdatedAt; refused (409) if someone changed it in the meantime.
@@ -25,6 +25,10 @@ export default handler({
           declarer: b.declarer, tricks: Number(b.tricks),
           leadSuit: b.leadSuit || null, leadRank: b.leadRank || null,
         };
+    // Vulnerability: as chosen on the scoring screen, else the Chicago default.
+    const def = vulnerabilityFor(dealNo, sess.first_dealer);
+    deal.vulNs = typeof b.vulNs === 'boolean' ? b.vulNs : def.ns;
+    deal.vulEw = typeof b.vulEw === 'boolean' ? b.vulEw : def.ew;
     const err = validateDeal(deal);
     if (err) throw new HttpError(400, err);
     const scored = scoreDeal(deal, sess.first_dealer);
@@ -41,6 +45,8 @@ export default handler({
       tricks: deal.passedOut ? null : deal.tricks,
       lead_suit: deal.passedOut ? null : deal.leadSuit,
       lead_rank: deal.passedOut ? null : deal.leadRank,
+      vul_ns: deal.vulNs,
+      vul_ew: deal.vulEw,
       ns_score: scored.nsScore,
       scoring_version: SCORING_VERSION,
     };

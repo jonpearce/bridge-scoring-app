@@ -198,7 +198,28 @@ test('incomplete session is reported as incomplete', () => {
 
 // ---------- Day summary ----------
 
-test('day summary adds each pair once per table and ranks by net', () => {
+test('only one pair scores on each board, never negative', () => {
+  const made = scoreDeal({ dealNo: 1, level: 3, strain: 'NT', doubled: '', tricks: 9, declarer: 'E' }, 'N');
+  assert.equal(made.ewPoints, 400); assert.equal(made.nsPoints, 0); assert.equal(made.scoredBy, 'EW');
+  const down = scoreDeal({ dealNo: 1, level: 4, strain: 'S', doubled: '', tricks: 9, declarer: 'N' }, 'N');
+  assert.equal(down.ewPoints, 50); assert.equal(down.nsPoints, 0); assert.equal(down.scoredBy, 'EW');
+  for (const d of [made, down]) { assert.ok(d.nsPoints >= 0 && d.ewPoints >= 0); assert.ok(d.nsPoints === 0 || d.ewPoints === 0); }
+});
+
+test('vulnerability can be changed on a board', () => {
+  const def = scoreDeal({ dealNo: 1, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N' }, 'N');
+  assert.equal(def.nsScore, 420);
+  const vul = scoreDeal({ dealNo: 1, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N', vulNs: true, vulEw: false }, 'N');
+  assert.equal(vul.nsScore, 620);
+  assert.equal(vul.vulText, 'N/S vulnerable');
+});
+
+test('game result: each pair total and winning margin', () => {
+  const t = sessionTotals(example.map((d) => scoreDeal(d, 'N')));
+  assert.equal(t.margin, 10);
+});
+
+test('day summary adds each pair once per game and ranks by points won', () => {
   const sessions = [
     { id: 'a', nsP1: 'Jon', nsP2: 'Mary', ewP1: 'Ann', ewP2: 'Bob', firstDealer: 'N', deals: example },
     { id: 'b', nsP1: 'Cath', nsP2: 'Dave', ewP1: 'mary ', ewP2: 'Jon', firstDealer: 'N', deals: [
@@ -207,15 +228,13 @@ test('day summary adds each pair once per table and ranks by net', () => {
   ];
   const rows = daySummary(sessions);
   const jm = rows.find((r) => r.key === pairKey('Jon', 'Mary'));
-  assert.equal(jm.sessions, 2);           // names matched regardless of order/case
+  assert.equal(jm.games, 2);              // names matched regardless of order/case
   assert.equal(jm.boards, 5);
-  assert.equal(jm.net, -10 - 400);
+  assert.equal(jm.points, 230);           // 140 + 90 in game a, nothing in game b
   assert.equal(jm.completed, 1);
-  const ab = rows.find((r) => r.key === pairKey('Ann', 'Bob'));
-  assert.equal(ab.net, 10);
-  assert.equal(rows[0].label, 'Cath & Dave');
+  assert.equal(rows.find((r) => r.key === pairKey('Ann', 'Bob')).points, 240);
+  assert.deepEqual(rows.map((r) => r.label), ['Cath & Dave', 'Ann & Bob', 'Jon & Mary']);
   assert.equal(rows[0].rank, 1);
-  assert.equal(rows.at(-1).key, pairKey('Jon', 'Mary'));
-  // zero-sum across the room
-  assert.equal(rows.reduce((s, r) => s + r.net, 0), 0);
+  assert.ok(rows.every((r) => r.points >= 0));
+  assert.equal(rows.find((r) => r.key === pairKey('Ann', 'Bob')).gamesWon, 1);
 });

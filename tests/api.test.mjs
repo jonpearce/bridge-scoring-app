@@ -159,7 +159,18 @@ test('invalid entries are refused', async () => {
   assert.equal(r.status, 400);
 });
 
-test('a second table can record the same board independently', async () => {
+test('vulnerability chosen on the scoring screen is used and stored', async () => {
+  const cur = T.chi_deals.find((d) => d.session_id === sid && d.deal_no === 2);
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 2, level: 2, strain: 'S', declarer: 'E', tricks: 9, vulNs: false, vulEw: true, expectedUpdatedAt: cur.updated_at });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deal.nsScore, -140);   // 2S+1 by E/W: vulnerability doesn't change an undoubled overtrick
+  assert.equal(r.body.deal.vulEw, true);
+  const cur2 = T.chi_deals.find((d) => d.session_id === sid && d.deal_no === 2);
+  const r2 = await call(deal, 'PUT', { sessionId: sid, dealNo: 2, level: 2, strain: 'S', declarer: 'E', tricks: 7, vulNs: false, vulEw: true, expectedUpdatedAt: cur2.updated_at });
+  assert.equal(r2.body.deal.nsScore, 100);   // one down vulnerable → N/S get 100
+});
+
+test('a second game can record the same board independently', async () => {
   const s2 = await call(sessions, 'POST', { ...newTable, location: 'Table 2', nsP1: 'Cath', nsP2: 'Dave', ewP1: 'Eve', ewP2: 'Fay', clientToken: crypto.randomUUID() });
   const r = await call(deal, 'PUT', { sessionId: s2.body.session.id, dealNo: 1, level: 4, strain: 'H', declarer: 'S', tricks: 10 });
   assert.equal(r.status, 200);
@@ -172,7 +183,8 @@ test('a second table can record the same board independently', async () => {
 test('board numbers and dealer are locked once play has started', async () => {
   const r = await call(sessions, 'PATCH', { id: sid, startBoard: 20 });
   assert.equal(r.status, 409);
-  const ok = await call(sessions, 'PATCH', { id: sid, location: 'Clubhouse, table 3' });
+  const ok = await call(sessions, 'PATCH', { id: sid, nsP2: 'Margaret' });
   assert.equal(ok.status, 200);
-  assert.equal(ok.body.session.location, 'Clubhouse, table 3');
+  assert.equal(ok.body.session.nsP2, 'Margaret');
+  assert.equal(ok.body.session.location, 'Jon & Margaret v Ann & Bob');
 });

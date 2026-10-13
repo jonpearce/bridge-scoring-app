@@ -10,45 +10,58 @@ small server functions in `/api`) · Supabase (database) · GitHub (code).
 
 ---
 
-## Scoring rules used (agreed 12 Oct 2026)
+## Words used
+
+- **Game**: four boards played by two pairs (one Chicago).
+- **Board**: one deal.
+
+## Scoring rules used (agreed 12–13 Oct 2026)
 
 | Rule | What the app does |
 | --- | --- |
-| Contract score | Each deal scored on its own, duplicate style: trick points, overtricks, undertricks, +50 part-score, +300/+500 game, slams, doubled/redoubled, insult bonus. No part-score carry-over, no deal-4 bonus, no honours. |
-| Vulnerability | Deal 1 neither · deals 2 and 3 the **dealer's side** · deal 4 both. The dealer rotates N → E → S → W from the first dealer chosen when the table starts. |
-| Passed-out deal | Scores 0 and counts as one of the four. |
-| Sign convention | Stored as one number `ns_score`: **+ means North/South gained, − means East/West gained.** The screens show both sides (e.g. N/S +400 · E/W −400). |
-| Session result | Net points over the four deals (N/S points won minus E/W points won). |
-| Day ranking | Each pair's total net points across every board they played that day; ties broken by average per board. Each table session is one shared record, so no board is counted twice. |
+| Contract score | Each board scored on its own, duplicate style: trick points, overtricks, undertricks, +50 part-score, +300/+500 game, slams, doubled/redoubled, insult bonus. No part-score carry-over, no deal-4 bonus, no honours. |
+| Who scores | **Only one pair scores on each board.** Made: the declaring pair gets the points. Down: the defending pair gets the penalty. Nobody ever has a negative score. |
+| Vulnerability | Defaults to standard Chicago: deal 1 neither, deals 2 and 3 the **dealer's side**, deal 4 both (dealer rotates N → E → S → W from the first dealer). **It can be changed on the scoring screen for any board.** The vulnerability used is saved with the board. |
+| Passed-out board | Nobody scores; it counts as one of the four. |
+| Game result | Each pair's total points over the four boards; the higher total wins by the difference. |
+| Day ranking | Total points each pair won over the day; ties broken by average points per board. Each game is one shared record, so no board is counted twice. |
+
+Inside the database each board's score is one number, `ns_score`: + means
+the points went to North/South, − means they went to East/West. The screens
+only ever show the positive points each pair received.
 
 The score is calculated on the server (`lib/chicago.js`, called from
-`api/deal.js`). The phone shows a preview from the same file. Raw deal facts
-(contract, declarer, tricks, lead) are stored so scores can be recalculated.
+`api/deal.js`). The phone shows a preview from the same file. Raw facts
+(contract, declarer, tricks, lead, vulnerability) are stored so scores can be
+recalculated.
 
 ---
 
-## Using it at the table
+## Using it during a game
 
-1. **Open the app** on your phone and type the access code once. The phone
-   stays let in for 30 days.
-2. **Start a table** (one person per table is enough): enter where you are
-   playing, the first board number, who deals first, which direction your
-   pair is sitting, and the four names. Names and venue are remembered.
-   - The other pair at the table can instead tap the table under **Join a
-     table already started** and choose North/South or East/West.
-3. **Enter each board:** tap *Enter board …*, then level → suit → (doubled?)
-   → declarer → adjust tricks with − / + → optionally the lead suit and card
-   → **Save result**. The score shows before you save.
-   - *Board was passed out* records a zero.
+1. **Open the app** and type the access code once. The phone stays let in
+   for 30 days.
+2. **Start a new game** (one person per game is enough): choose whether your
+   pair is North/South or East/West, type the four names, and check the first
+   board number and who deals first. Names are remembered.
+   - The other pair can instead tap the game under **Join a game already
+     started** and choose North/South or East/West.
+3. **Enter each board:** tap *Enter board …*, then (if needed) change the
+   vulnerability, then level → suit → (doubled?) → declarer → adjust tricks
+   with − / + → optionally the lead suit and card → **Save result**. The
+   score shows before you save.
+   - *Board was passed out* records no score.
 4. **Correct a mistake:** tap the board's card, change it, Save. The same
    record is updated. If the other phone saved or changed that board a moment
    earlier, you're told what it says before anything is overwritten.
-5. **Other results:** compare every table's result for a board. The board
-   entry screen also shows other tables' results underneath.
+5. **Other results:** compare every game's result for a board. The board
+   entry screen also shows other games' results underneath.
 6. **Day summary:** rankings for today (or an earlier day). Tap a pair for
    its board-by-board history.
-7. After four boards, tap **Start the next session**. The next starting
-   board is suggested automatically.
+7. **New game:** tap **Start a new game** on the game screen. It's the big
+   button once four boards are in, and always available at the bottom. The
+   next first board is suggested automatically. Each new day starts fresh on
+   its own.
 
 ---
 
@@ -66,6 +79,8 @@ The score is calculated on the server (`lib/chicago.js`, called from
 | `tests/api.test.mjs` | Server tests against an in-memory database |
 | `supabase/migrations/20261012_chicago_tables.sql` | Adds the new tables |
 | `supabase/migrations/20261012_chicago_tables_ROLLBACK.sql` | Removes them again |
+| `supabase/migrations/20261013_vulnerability_and_cleanup.sql` | Removes test games; adds the vulnerability columns |
+| `supabase/migrations/20261013_vulnerability_ROLLBACK.sql` | Removes the vulnerability columns |
 | `supabase/legacy-duplicate-schema.sql` | The old app's schema, kept for reference |
 
 Run the tests (Node 18+): `npm test`
@@ -80,8 +95,8 @@ The new app uses three **new** tables. The old app's tables (`sessions`,
 | Table | One row per |
 | --- | --- |
 | `chi_events` | Playing day |
-| `chi_sessions` | Four-deal session at one table: venue, first board, first dealer, four names |
-| `chi_deals` | Board played in a session: contract, declarer, tricks, lead, `ns_score`. Unique per session + deal number, so corrections never duplicate. Indexed by board number for comparisons. |
+| `chi_sessions` | One game: first board, first dealer, four names (the `location` column holds a label made from the names) |
+| `chi_deals` | One board in a game: contract, declarer, tricks, lead, vulnerability used, `ns_score`. Unique per game + deal number, so corrections never duplicate. Indexed by board number for comparisons. |
 
 Board numbers identify a deal **within a playing day**. If separate events
 ever reuse board numbers on the same day, add an event name to `chi_events`

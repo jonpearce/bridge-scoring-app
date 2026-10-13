@@ -1,24 +1,27 @@
 // =============================================================
 //  Chicago bridge scoring — phone app (no build step)
-//  Screens: login · play (session + quick board entry) · other results · day summary
-//  All saving goes through /api (the server checks the access code and
-//  calculates the official score). Scores shown while entering are a preview
+//  Words used on screen:
+//    game  = four boards played by two pairs (one Chicago)
+//    board = one deal
+//  Screens: login · play (game + quick board entry) · other results · day summary
+//  All saving goes through /api: the server checks the access code and
+//  calculates the official score. Scores shown while entering are a preview
 //  from the same scoring engine.
 // =============================================================
 import {
-  scoreDeal, sessionTotals, daySummary, vulnerabilityFor, vulnerabilityText, dealerFor, boardNumberFor,
-  contractText, outcomeText, leadText, strainSymbol, seatName, sideOf, sideName, pairKey, pairLabel,
+  scoreDeal, sessionTotals, daySummary, vulnerabilityFor, vulForDeal, vulnerabilityText, dealerFor, boardNumberFor,
+  contractText, outcomeText, strainSymbol, seatName, sideOf, sideName, pairKey, pairLabel,
   LEAD_RANKS, SUITS,
 } from './lib/chicago.js';
 
 const $app = document.getElementById('app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const signed = (n) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 const red = (s) => s === 'H' || s === 'D';
 const suitHtml = (s) => `<span class="suit ${red(s) ? 'red' : ''}">${strainSymbol(s)}</span>`;
 const contractHtml = (d) => d.passedOut ? 'Passed out'
   : `${d.level}${d.strain === 'NT' ? 'NT' : suitHtml(d.strain)}${d.doubled ? ' ' + d.doubled : ''}`;
-const leadHtml = (d) => (d.leadSuit ? suitHtml(d.leadSuit) : '') + esc(d.leadRank || '') || '—';
+const leadHtml = (d) => ((d.leadSuit ? suitHtml(d.leadSuit) : '') + esc(d.leadRank || '')) || '—';
+const short = (side) => (side === 'NS' ? 'N/S' : 'E/W');
 const uuid = () => (crypto.randomUUID ? crypto.randomUUID()
   : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
 
@@ -30,17 +33,13 @@ const store = {
 };
 
 // ---------- state ----------
-const state = {
-  data: null,          // { date, today, days, sessions }
-  viewDate: null,      // date shown on Day summary / Other results
-  entry: null,         // board-entry draft
-  loading: false,
-};
+const state = { data: null, viewDate: null, entry: null };
 const mine = () => {
   const m = store.get('my');
   return m && state.data && m.date === state.data.today ? m : null;
 };
 const sessionById = (id) => state.data?.sessions.find((s) => s.id === id);
+const gameTitle = (s) => `${esc(pairLabel(s.nsP1, s.nsP2))} <span class="v">v</span> ${esc(pairLabel(s.ewP1, s.ewP2))}`;
 
 // ---------- server calls ----------
 class ApiError extends Error { constructor(status, msg, body) { super(msg); this.status = status; this.body = body; } }
@@ -64,8 +63,7 @@ async function api(path, opts = {}) {
 }
 
 async function loadDay(date) {
-  const q = date ? `?date=${date}` : '';
-  const d = await api('sessions' + q);
+  const d = await api('sessions' + (date ? `?date=${date}` : ''));
   if (!date || date === d.today) state.data = d;
   return d;
 }
@@ -97,8 +95,8 @@ async function render() {
     $app.innerHTML = shell('play', '<p class="muted center pad">Loading…</p>');
     try { await loadDay(); } catch (e) { if (e.status !== 401) $app.innerHTML = shell('play', errorBlock(e.message)); return; }
   }
-  const screens = { play: renderPlay, new: renderNew, edit: renderNew, s: renderSession, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
-  (screens[r.name] || renderPlay)(r);
+  const screens = { play: renderPlay, new: renderNew, edit: renderNew, s: renderGame, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
+  await (screens[r.name] || renderPlay)(r);
   window.scrollTo(0, 0);
 }
 
@@ -110,6 +108,16 @@ function shell(tab, inner) {
   </nav>`;
 }
 const errorBlock = (msg) => `<div class="card error"><p>${esc(msg)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`;
+
+// ---------- shared score display: only the pair that scores gets points ----------
+function scorePair(nsScore) {
+  const ns = Math.max(nsScore, 0), ew = Math.max(-nsScore, 0);
+  return `<span class="sc ns ${ns ? 'won' : 'nil'}"><span class="tag ns">N/S</span> ${ns}</span>`
+       + `<span class="sc ew ${ew ? 'won' : 'nil'}"><span class="tag ew">E/W</span> ${ew}</span>`;
+}
+function vulBadge(v) {
+  return `<span class="vb ${v.ns ? 'on' : ''}">N/S ${v.ns ? 'Vul' : 'Not vul'}</span><span class="vb ${v.ew ? 'on' : ''}">E/W ${v.ew ? 'Vul' : 'Not vul'}</span>`;
+}
 
 // =============================================================
 //  Login
@@ -146,29 +154,28 @@ function renderLogin() {
 function renderPlay() {
   const m = mine();
   if (m && sessionById(m.sessionId)) return go(`#/s/${m.sessionId}`);
-  const sessions = state.data.sessions;
-  const list = sessions.length
-    ? sessions.slice().reverse().map((s) => {
+  const games = state.data.sessions;
+  const list = games.length
+    ? games.slice().reverse().map((s) => {
         const n = s.deals.length;
         return `<button class="row-btn" data-join="${s.id}">
-          <span><strong>${esc(s.location)}</strong><br><span class="muted small">N/S ${esc(pairLabel(s.nsP1, s.nsP2))} · E/W ${esc(pairLabel(s.ewP1, s.ewP2))}</span></span>
-          <span class="pill ${n === 4 ? 'done' : ''}">${n === 4 ? 'Done' : `${n} of 4`}</span></button>`;
+          <span class="rb-names"><span><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}</span><span><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</span></span>
+          <span class="pill ${n === 4 ? 'done' : ''}">${n === 4 ? 'Finished' : `${n} of 4`}</span></button>`;
       }).join('')
-    : '<p class="muted">No tables have started yet today.</p>';
+    : '<p class="muted">No games have started yet today.</p>';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1><p class="muted">${fmtDate(state.data.today)}</p></header>
-    <a class="btn primary big block" href="#/new">Start a new table</a>
-    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair at your table has already set it up, tap it here.</p><div class="stack">${list}</div></section>`);
+    <a class="btn primary big block" href="#/new">Start a new game</a>
+    <section class="card"><h2>Join a game already started</h2><p class="muted small">If the other pair has already set up your game, tap it here.</p><div class="stack">${list}</div></section>`);
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));
 }
 
 function chooseSide(sessionId) {
   const s = sessionById(sessionId);
   sheet(`<h2>Which pair are you?</h2>
-    <p class="muted">${esc(s.location)}</p>
     <div class="stack">
-      <button class="btn big ns" data-side="NS">North/South<br><span class="small">${esc(pairLabel(s.nsP1, s.nsP2))}</span></button>
-      <button class="btn big ew" data-side="EW">East/West<br><span class="small">${esc(pairLabel(s.ewP1, s.ewP2))}</span></button>
+      <button class="btn big ns" data-side="NS">North/South<br><span>${esc(pairLabel(s.nsP1, s.nsP2))}</span></button>
+      <button class="btn big ew" data-side="EW">East/West<br><span>${esc(pairLabel(s.ewP1, s.ewP2))}</span></button>
     </div>`, (root) => root.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => {
       store.set('my', { date: state.data.today, sessionId, side: b.dataset.side });
       closeSheet(); go(`#/s/${sessionId}`);
@@ -176,7 +183,7 @@ function chooseSide(sessionId) {
 }
 
 // =============================================================
-//  Start / edit a table session
+//  Start / edit a game
 // =============================================================
 function renderNew(r) {
   const editing = r.name === 'edit' ? sessionById(r.a) : null;
@@ -186,29 +193,15 @@ function renderNew(r) {
   const nameList = [...new Set(state.data.sessions.flatMap((s) => [s.nsP1, s.nsP2, s.ewP1, s.ewP2]).concat(prefs.names || []))];
   const played = editing && editing.deals.length > 0;
   const v = editing
-    ? { location: editing.location, startBoard: editing.startBoard, firstDealer: editing.firstDealer,
+    ? { startBoard: editing.startBoard, firstDealer: editing.firstDealer,
         us1: mySide === 'NS' ? editing.nsP1 : editing.ewP1, us2: mySide === 'NS' ? editing.nsP2 : editing.ewP2,
         them1: mySide === 'NS' ? editing.ewP1 : editing.nsP1, them2: mySide === 'NS' ? editing.ewP2 : editing.nsP2 }
-    : { location: prefs.location || '', startBoard: last ? last.startBoard + 4 : 1, firstDealer: 'N',
+    : { startBoard: last ? last.startBoard + 4 : 1, firstDealer: 'N',
         us1: prefs.names?.[0] || '', us2: prefs.names?.[1] || '', them1: '', them2: '' };
 
   $app.innerHTML = shell('play', `
-    <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Table details' : 'Start a new table'}</h1></header>
+    <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Change names' : 'Start a new game'}</h1></header>
     <form id="newForm" class="stack" autocomplete="off">
-      <section class="card stack">
-        <label class="lbl" for="loc">Where are you playing?</label>
-        <input id="loc" name="location" class="input" placeholder="e.g. Clubhouse, table 2" value="${esc(v.location)}" maxlength="80" required enterkeyhint="next">
-        <div class="two">
-          <div><label class="lbl" for="sb">First board</label>
-            <div class="stepper"><button type="button" class="step" data-step="-1" aria-label="Lower" ${played ? 'disabled' : ''}>−</button>
-            <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" value="${v.startBoard}" ${played ? 'disabled' : ''}>
-            <button type="button" class="step" data-step="1" aria-label="Higher" ${played ? 'disabled' : ''}>+</button></div>
-            <p class="small muted" id="boardsLine"></p></div>
-          <div><span class="lbl">Who deals first?</span>
-            <div class="seg four" role="radiogroup" aria-label="First dealer">${['N', 'E', 'S', 'W'].map((d) => `<button type="button" role="radio" data-dealer="${d}" aria-checked="${v.firstDealer === d}" class="${v.firstDealer === d ? 'on' : ''}" ${played ? 'disabled' : ''}>${d}</button>`).join('')}</div></div>
-        </div>
-        ${played ? '<p class="small muted">Board numbers and dealer are fixed once a result has been saved.</p>' : ''}
-      </section>
       <section class="card stack">
         <span class="lbl">Your pair is sitting</span>
         <div class="seg two-way" role="radiogroup" aria-label="Your direction">
@@ -216,39 +209,48 @@ function renderNew(r) {
           <button type="button" role="radio" data-side="EW" class="ew ${mySide === 'EW' ? 'on' : ''}" aria-checked="${mySide === 'EW'}">East/West</button>
         </div>
         <label class="lbl" id="usLbl">Your pair</label>
-        <div class="two"><input name="us1" class="input" placeholder="Player 1" value="${esc(v.us1)}" list="names" required maxlength="40" aria-labelledby="usLbl">
-        <input name="us2" class="input" placeholder="Player 2" value="${esc(v.us2)}" list="names" required maxlength="40" aria-labelledby="usLbl"></div>
+        <input name="us1" class="input" placeholder="Player 1" value="${esc(v.us1)}" list="names" required maxlength="40" aria-labelledby="usLbl">
+        <input name="us2" class="input" placeholder="Player 2" value="${esc(v.us2)}" list="names" required maxlength="40" aria-labelledby="usLbl">
         <label class="lbl" id="themLbl">Opponents</label>
-        <div class="two"><input name="them1" class="input" placeholder="Player 1" value="${esc(v.them1)}" list="names" required maxlength="40" aria-labelledby="themLbl">
-        <input name="them2" class="input" placeholder="Player 2" value="${esc(v.them2)}" list="names" required maxlength="40" aria-labelledby="themLbl"></div>
+        <input name="them1" class="input" placeholder="Player 1" value="${esc(v.them1)}" list="names" required maxlength="40" aria-labelledby="themLbl">
+        <input name="them2" class="input" placeholder="Player 2" value="${esc(v.them2)}" list="names" required maxlength="40" aria-labelledby="themLbl">
         <datalist id="names">${nameList.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
       </section>
+      <section class="card stack">
+        <label class="lbl" for="sb">First board number</label>
+        <div class="stepper"><button type="button" class="step" data-step="-1" aria-label="Lower" ${played ? 'disabled' : ''}>−</button>
+          <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" value="${v.startBoard}" ${played ? 'disabled' : ''}>
+          <button type="button" class="step" data-step="1" aria-label="Higher" ${played ? 'disabled' : ''}>+</button></div>
+        <p class="muted" id="boardsLine"></p>
+        <span class="lbl">Who deals first?</span>
+        <div class="seg four" role="radiogroup" aria-label="First dealer">${['N', 'E', 'S', 'W'].map((d) => `<button type="button" role="radio" data-dealer="${d}" aria-checked="${v.firstDealer === d}" class="${v.firstDealer === d ? 'on' : ''}" ${played ? 'disabled' : ''}>${seatName(d)}</button>`).join('')}</div>
+        ${played ? '<p class="muted small">Board numbers and dealer are fixed once a result has been saved.</p>' : ''}
+      </section>
       <p id="formErr" class="err" role="alert"></p>
-      <button class="btn primary big block" type="submit">${editing ? 'Save details' : 'Start playing'}</button>
+      <button class="btn primary big block" type="submit">${editing ? 'Save names' : 'Start playing'}</button>
     </form>`);
 
   const f = document.getElementById('newForm');
   let dealer = v.firstDealer, side = mySide;
   const token = uuid();
   const sbInput = f.startBoard;
-  const updateBoards = () => {
+  const update = () => {
     const n = parseInt(sbInput.value, 10);
-    document.getElementById('boardsLine').textContent = n > 0 ? `Boards ${n}, ${n + 1}, ${n + 2}, ${n + 3}` : '';
-    const lbl = (s) => (s === 'NS' ? 'North/South' : 'East/West');
-    document.getElementById('usLbl').textContent = `Your pair (${lbl(side)})`;
-    document.getElementById('themLbl').textContent = `Opponents (${lbl(side === 'NS' ? 'EW' : 'NS')})`;
+    document.getElementById('boardsLine').textContent = n > 0 ? `Boards ${n}, ${n + 1}, ${n + 2} and ${n + 3}` : '';
+    document.getElementById('usLbl').textContent = `Your pair (${sideName(side)})`;
+    document.getElementById('themLbl').textContent = `Opponents (${sideName(side === 'NS' ? 'EW' : 'NS')})`;
   };
-  updateBoards();
-  sbInput.oninput = updateBoards;
-  f.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => { sbInput.value = Math.max(1, (parseInt(sbInput.value, 10) || 1) + Number(b.dataset.step)); updateBoards(); }));
+  update();
+  sbInput.oninput = update;
+  f.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => { sbInput.value = Math.max(1, (parseInt(sbInput.value, 10) || 1) + Number(b.dataset.step)); update(); }));
   f.querySelectorAll('[data-dealer]').forEach((b) => (b.onclick = () => { dealer = b.dataset.dealer; radio(f, '[data-dealer]', b); }));
-  f.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => { side = b.dataset.side; radio(f, '[data-side]', b); updateBoards(); }));
+  f.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => { side = b.dataset.side; radio(f, '[data-side]', b); update(); }));
 
   f.onsubmit = async (ev) => {
     ev.preventDefault();
     const fd = Object.fromEntries(new FormData(f));
     const body = {
-      location: fd.location, startBoard: parseInt(editing && played ? editing.startBoard : sbInput.value, 10), firstDealer: dealer,
+      startBoard: parseInt(editing && played ? editing.startBoard : sbInput.value, 10), firstDealer: dealer,
       nsP1: side === 'NS' ? fd.us1 : fd.them1, nsP2: side === 'NS' ? fd.us2 : fd.them2,
       ewP1: side === 'EW' ? fd.us1 : fd.them1, ewP2: side === 'EW' ? fd.us2 : fd.them2,
     };
@@ -257,11 +259,11 @@ function renderNew(r) {
       const out = editing
         ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body } })
         : await api('sessions', { method: 'POST', body: { ...body, clientToken: token } });
-      store.set('prefs', { location: fd.location, names: [fd.us1, fd.us2] });
+      store.set('prefs', { names: [fd.us1, fd.us2] });
       store.set('my', { date: state.data.today, sessionId: out.session.id, side });
       store.set('lastSession', { startBoard: out.session.startBoard, side });
       upsertSession(out.session);
-      toast(editing ? 'Details saved' : 'Table started');
+      toast(editing ? 'Names saved' : 'Game started');
       go(`#/s/${out.session.id}`);
     } catch (e) {
       document.getElementById('formErr').textContent = e.message;
@@ -279,94 +281,86 @@ function upsertSession(s) {
 }
 
 // =============================================================
-//  Session — four-board overview
+//  Game — four-board overview
 // =============================================================
 function dealsFor(s) {
   return [1, 2, 3, 4].map((n) => {
     const d = s.deals.find((x) => x.dealNo === n);
-    const vul = vulnerabilityFor(n, s.firstDealer);
+    const vul = d ? vulForDeal(d, s.firstDealer) : vulnerabilityFor(n, s.firstDealer);
     return { n, board: boardNumberFor(n, s.startBoard), vul, dealer: dealerFor(n, s.firstDealer), d, scored: d ? scoreDeal(d, s.firstDealer) : null };
   });
 }
 
-function renderSession(r) {
+function renderGame(r) {
   const s = sessionById(r.a);
-  if (!s) { $app.innerHTML = shell('play', errorBlock('This table could not be found.')); return; }
+  if (!s) { $app.innerHTML = shell('play', errorBlock('This game could not be found.')); return; }
   const m = mine();
   const isMine = m?.sessionId === s.id;
   const rows = dealsFor(s);
   const done = rows.filter((x) => x.d).length;
   const t = sessionTotals(rows.filter((x) => x.scored).map((x) => x.scored));
   const next = rows.find((x) => !x.d);
-  const youAre = isMine ? `<p class="small">You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong></p>` : '';
 
   const card = (x) => {
     const head = `<div class="bhead"><span class="bnum">Board ${x.board}</span><span class="vul">${vulBadge(x.vul)}</span></div>`;
     if (!x.d) return `<a class="card board todo" href="#/deal/${s.id}/${x.n}">${head}
-      <p class="muted small">Deal ${x.n} · Dealer ${seatName(x.dealer)}</p><span class="btn ghost">Enter result ›</span></a>`;
+      <p class="muted">Deal ${x.n} · Dealer ${seatName(x.dealer)}</p><span class="btn ghost">Enter result ›</span></a>`;
     const sc = x.scored;
     return `<a class="card board" href="#/deal/${s.id}/${x.n}" aria-label="Board ${x.board}, tap to correct">${head}
       <dl class="facts">
         <div><dt>Contract</dt><dd>${contractHtml(x.d)}${x.d.passedOut ? '' : ` <span class="by">by ${seatName(x.d.declarer)}</span>`}</dd></div>
         ${x.d.passedOut ? '' : `<div><dt>Result</dt><dd>${esc(sc.outcome)}</dd></div>
-        <div><dt>Contract winner</dt><dd>${sc.winner === 'NS' ? 'N/S' : 'E/W'}</dd></div>
+        <div><dt>Contract winner</dt><dd>${short(sc.winner)}</dd></div>
         <div><dt>Lead</dt><dd>${leadHtml(x.d)}</dd></div>`}
       </dl>
       <div class="scores">${scorePair(sc.nsScore)}</div>
-      <span class="small muted edit">Tap to correct ›</span></a>`;
+      <span class="muted edit">Tap to correct ›</span></a>`;
   };
 
   const tableRows = rows.map((x) => `<tr>
     <td>${x.board}</td><td>${vulnerabilityText(x.vul).replace(' vulnerable', '')}</td>
     <td>${x.d ? contractHtml(x.d) : '<span class="muted">—</span>'}</td>
-    <td>${x.d && !x.d.passedOut ? x.scored.winner.replace('NS', 'N/S').replace('EW', 'E/W') : ''}</td>
+    <td>${x.d && !x.d.passedOut ? short(x.scored.winner) : ''}</td>
     <td>${x.d && !x.d.passedOut ? leadHtml(x.d) : ''}</td>
-    <td>${x.d ? esc(x.scored.outcome) : '<a href="#/deal/' + s.id + '/' + x.n + '">Enter</a>'}</td>
-    <td class="num tns">${x.d && x.scored.nsScore > 0 ? '+' + x.scored.nsScore : ''}</td>
-    <td class="num tew">${x.d && x.scored.ewScore > 0 ? '+' + x.scored.ewScore : ''}</td>
+    <td>${x.d ? esc(x.scored.outcome) : `<a href="#/deal/${s.id}/${x.n}">Enter</a>`}</td>
+    <td class="num tns">${x.d && x.scored.nsPoints ? x.scored.nsPoints : ''}</td>
+    <td class="num tew">${x.d && x.scored.ewPoints ? x.scored.ewPoints : ''}</td>
     <td>${x.d ? `<a href="#/deal/${s.id}/${x.n}">Edit</a>` : ''}</td></tr>`).join('');
 
   $app.innerHTML = shell('play', `
     <header class="top">
-      <h1>${esc(s.location)}</h1>
       <p class="pairs"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
-      ${youAre}
+      ${isMine ? `<p>You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong></p>` : ''}
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${next ? `<a class="btn primary big block" href="#/deal/${s.id}/${next.n}">Enter board ${next.board}</a>` : ''}
     ${done ? totalsCard(t) : ''}
+    ${done === 4 ? '<button class="btn primary big block" data-newgame>Start a new game</button>' : ''}
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <div class="stack foot">
-      ${done === 4 ? '<button class="btn primary big block" id="nextSession">Start the next session</button>' : ''}
-      ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
-      <a class="btn ghost block" href="#/edit/${s.id}">Change names or table</a>
-      ${isMine ? '<button class="btn ghost block" id="leave">Leave this table</button>' : ''}
+      ${done < 4 ? '<button class="btn big block" data-newgame>Start a new game</button>' : ''}
+      ${isMine ? '' : '<button class="btn block" id="claim">This is my game</button>'}
+      <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
     </div>`);
 
-  const leave = () => { store.del('my'); go('#/play'); };
-  document.getElementById('leave')?.addEventListener('click', () => {
-    if (done < 4 && !confirm('Leave this table? Its results stay saved and you can rejoin from the Play screen.')) return;
-    leave();
-  });
-  document.getElementById('nextSession')?.addEventListener('click', () => { store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS' }); store.del('my'); go('#/new'); });
+  $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
+    if (done < 4 && !confirm(`This game has ${done} of 4 boards entered.\n\nStart a new game anyway? The boards already saved are kept.`)) return;
+    store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS' });
+    store.del('my');
+    go('#/new');
+  }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
 }
 
 function totalsCard(t) {
-  const verdict = !t.complete ? 'So far' : t.net === 0 ? 'A tie' : `${t.net > 0 ? 'North/South' : 'East/West'} win`;
+  const verdict = !t.complete ? 'So far' : t.net === 0 ? 'Result' : 'Winners';
+  const line = t.net === 0 ? 'All square' : `${short(t.leader)} by ${t.margin}`;
   return `<section class="card totals ${t.complete ? 'final' : ''}">
     <div class="tot"><span class="tag ns">N/S</span><strong>${t.nsPoints}</strong></div>
     <div class="tot"><span class="tag ew">E/W</span><strong>${t.ewPoints}</strong></div>
-    <div class="net"><span class="small">${verdict}</span><strong>${t.net === 0 ? 'Level' : `${t.net > 0 ? 'N/S' : 'E/W'} by ${Math.abs(t.net)}`}</strong></div>
+    <div class="net"><span>${verdict}</span><strong>${line}</strong></div>
   </section>`;
-}
-
-function vulBadge(v) {
-  return `<span class="vb ${v.ns ? 'on' : ''}">N/S ${v.ns ? 'Vul' : 'Not vul'}</span><span class="vb ${v.ew ? 'on' : ''}">E/W ${v.ew ? 'Vul' : 'Not vul'}</span>`;
-}
-function scorePair(ns) {
-  return `<span class="sc ns"><span class="tag ns">N/S</span> ${signed(ns)}</span><span class="sc ew"><span class="tag ew">E/W</span> ${signed(-ns)}</span>`;
 }
 
 // =============================================================
@@ -378,54 +372,62 @@ function renderEntry(r) {
   if (!s || ![1, 2, 3, 4].includes(n)) { $app.innerHTML = shell('play', errorBlock('This board could not be found.')); return; }
   const existing = s.deals.find((d) => d.dealNo === n);
   const draftKey = `draft:${s.id}:${n}`;
+  const def = vulnerabilityFor(n, s.firstDealer);
   const saved = existing ? {
     passedOut: existing.passedOut, level: existing.level, strain: existing.strain, doubled: existing.doubled || '', declarer: existing.declarer,
     diff: existing.passedOut ? 0 : existing.tricks - (existing.level + 6), leadSuit: existing.leadSuit, leadRank: existing.leadRank,
+    vulNs: vulForDeal(existing, s.firstDealer).ns, vulEw: vulForDeal(existing, s.firstDealer).ew,
   } : null;
-  state.entry = {
-    sessionId: s.id, n, expectedUpdatedAt: existing?.updatedAt || null,
-    e: store.get(draftKey) || saved || { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null },
-  };
+  const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
+  state.entry = { sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
   const board = boardNumberFor(n, s.startBoard);
-  const vul = vulnerabilityFor(n, s.firstDealer);
 
   $app.innerHTML = shell('play', `
     <header class="entry-head">
-      <a href="#/s/${s.id}" class="back">‹ ${esc(s.location)}</a>
-      <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted small">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
-      <div class="vul">${vulBadge(vul)}</div>
-      <nav class="dealnav" aria-label="Boards in this session">${[1, 2, 3, 4].map((k) => `<a href="#/deal/${s.id}/${k}" class="${k === n ? 'on' : ''} ${s.deals.some((d) => d.dealNo === k) ? 'done' : ''}">${boardNumberFor(k, s.startBoard)}</a>`).join('')}</nav>
+      <a href="#/s/${s.id}" class="back">‹ Back to the game</a>
+      <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
+      <nav class="dealnav" aria-label="Boards in this game">${[1, 2, 3, 4].map((k) => `<a href="#/deal/${s.id}/${k}" class="${k === n ? 'on' : ''} ${s.deals.some((d) => d.dealNo === k) ? 'done' : ''}">${boardNumberFor(k, s.startBoard)}</a>`).join('')}</nav>
     </header>
-    ${existing ? '<p class="note">Already saved — change anything and tap Save to correct it.</p>' : ''}
+    ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
     <div id="entry"></div>
-    <section class="card"><h2>On other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
+    <section class="card"><h2>On other games</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   drawEntry();
   document.getElementById('saveBtn').onclick = () => saveEntry(draftKey);
 }
 
 function drawEntry() {
-  const { e } = state.entry;
+  const { e, def } = state.entry;
   const s = sessionById(state.entry.sessionId);
   const box = document.getElementById('entry');
+  const btn = (attr, val, label, on, cls = '') => `<button type="button" class="key ${cls} ${on ? 'on' : ''}" data-${attr}="${val}" aria-pressed="${on}">${label}</button>`;
+  const changed = e.vulNs !== def.ns || e.vulEw !== def.ew;
+  const vulCard = `<section class="card keys">
+      <h2 class="kh">Vulnerable? <span class="hint">tap to change</span></h2>
+      <div class="grid two">
+        <button type="button" class="key vulkey ${e.vulNs ? 'vul' : ''}" data-vul="ns" aria-pressed="${e.vulNs}">N/S<br>${e.vulNs ? 'VULNERABLE' : 'Not vulnerable'}</button>
+        <button type="button" class="key vulkey ${e.vulEw ? 'vul' : ''}" data-vul="ew" aria-pressed="${e.vulEw}">E/W<br>${e.vulEw ? 'VULNERABLE' : 'Not vulnerable'}</button>
+      </div>
+      ${changed ? `<p class="small warn">Changed from the usual for this deal (${vulnerabilityText(def)}). <button type="button" class="link" data-act="vulreset">Put it back</button></p>` : ''}
+    </section>`;
   if (e.passedOut) {
-    box.innerHTML = `<section class="card center"><p class="passed">Passed out</p><p class="muted">No contract — the board scores 0 for both sides.</p>
-      <button class="btn" data-act="unpass">Undo — it was played</button></section>`;
+    box.innerHTML = `<section class="card center"><p class="passed">Passed out</p><p class="muted">No contract. Nobody scores on this board.</p>
+      <button class="btn" data-act="unpass">Undo, it was played</button></section>`;
   } else {
     const need = e.level ? e.level + 6 : null;
     const tricks = need != null ? need + e.diff : null;
     const res = need == null ? '' : e.diff === 0 ? 'Made exactly' : e.diff > 0 ? `Made +${e.diff}` : `Down ${-e.diff}`;
-    const btn = (attr, val, label, on, cls = '') => `<button type="button" class="key ${cls} ${on ? 'on' : ''}" data-${attr}="${val}" aria-pressed="${on}">${label}</button>`;
     box.innerHTML = `
+      ${vulCard}
       <section class="card keys">
         <h2 class="kh">Contract</h2>
         <div class="grid seven">${[1, 2, 3, 4, 5, 6, 7].map((l) => btn('level', l, l, e.level === l)).join('')}</div>
         <div class="grid five">${['C', 'D', 'H', 'S', 'NT'].map((st) => btn('strain', st, st === 'NT' ? 'NT' : suitHtml(st), e.strain === st, 'suitkey')).join('')}</div>
-        <div class="grid three dbl">${[['', 'Undoubled'], ['X', 'Doubled'], ['XX', 'Redoubled']].map(([v, l]) => btn('dbl', v || 'none', l, (e.doubled || '') === v, 'small')).join('')}</div>
+        <div class="grid three dbl">${[['', 'Not doubled'], ['X', 'Doubled'], ['XX', 'Redoubled']].map(([v, l]) => btn('dbl', v || 'none', l, (e.doubled || '') === v, 'small')).join('')}</div>
       </section>
       <section class="card keys">
         <h2 class="kh">Declarer</h2>
-        <div class="decl">${['N', 'S', 'E', 'W'].map((d) => btn('decl', d, `${seatName(d)}`, e.declarer === d, sideOf(d) === 'NS' ? 'ns' : 'ew')).join('')}</div>
+        <div class="decl">${['N', 'S', 'E', 'W'].map((d) => btn('decl', d, seatName(d), e.declarer === d, sideOf(d) === 'NS' ? 'ns' : 'ew')).join('')}</div>
       </section>
       <section class="card keys">
         <h2 class="kh">Tricks taken by declarer</h2>
@@ -436,9 +438,9 @@ function drawEntry() {
         </div>
       </section>
       <section class="card keys">
-        <h2 class="kh">Opening lead <span class="muted small">(optional)</span></h2>
+        <h2 class="kh">Opening lead <span class="hint">(optional)</span></h2>
         <div class="grid four">${SUITS.map((st) => btn('lsuit', st, suitHtml(st), e.leadSuit === st, 'suitkey')).join('')}</div>
-        <div class="grid seven ranks">${LEAD_RANKS.map((rk) => btn('lrank', rk, rk, e.leadRank === rk, 'small')).join('')}</div>
+        <div class="grid seven ranks">${LEAD_RANKS.map((rk) => btn('lrank', rk, rk, e.leadRank === rk)).join('')}</div>
         ${e.leadSuit || e.leadRank ? '<button type="button" class="link" data-act="nolead">Clear the lead</button>' : ''}
       </section>
       <button type="button" class="btn ghost block" data-act="pass">Board was passed out</button>`;
@@ -449,7 +451,7 @@ function drawEntry() {
 
 function onEntryTap(ev) {
   const b = ev.target.closest('button'); if (!b) return;
-  const { e } = state.entry;
+  const { e, def } = state.entry;
   const d = b.dataset;
   if (d.level) { e.level = Number(d.level); e.diff = Math.max(-(e.level + 6), Math.min(13 - (e.level + 6), e.diff)); }
   else if (d.strain) e.strain = d.strain;
@@ -458,6 +460,9 @@ function onEntryTap(ev) {
   else if (d.trick) { const t = e.level + 6 + e.diff + Number(d.trick); if (t >= 0 && t <= 13) e.diff += Number(d.trick); }
   else if (d.lsuit) e.leadSuit = e.leadSuit === d.lsuit ? null : d.lsuit;
   else if (d.lrank) e.leadRank = e.leadRank === d.lrank ? null : d.lrank;
+  else if (d.vul === 'ns') e.vulNs = !e.vulNs;
+  else if (d.vul === 'ew') e.vulEw = !e.vulEw;
+  else if (d.act === 'vulreset') { e.vulNs = def.ns; e.vulEw = def.ew; }
   else if (d.act === 'nolead') { e.leadSuit = null; e.leadRank = null; }
   else if (d.act === 'pass') e.passedOut = true;
   else if (d.act === 'unpass') e.passedOut = false;
@@ -468,9 +473,9 @@ function onEntryTap(ev) {
 
 function entryDeal() {
   const { e, n } = state.entry;
-  if (e.passedOut) return { dealNo: n, passedOut: true };
+  if (e.passedOut) return { dealNo: n, passedOut: true, vulNs: e.vulNs, vulEw: e.vulEw };
   return { dealNo: n, passedOut: false, level: e.level, strain: e.strain, doubled: e.doubled || '', declarer: e.declarer,
-    tricks: e.level ? e.level + 6 + e.diff : null, leadSuit: e.leadSuit, leadRank: e.leadRank };
+    tricks: e.level ? e.level + 6 + e.diff : null, leadSuit: e.leadSuit, leadRank: e.leadRank, vulNs: e.vulNs, vulEw: e.vulEw };
 }
 const missingFor = (d) => d.passedOut ? null : !d.level ? 'Choose the contract level' : !d.strain ? 'Choose the suit or NT' : !d.declarer ? 'Choose the declarer' : null;
 
@@ -481,8 +486,8 @@ function drawPreview(s) {
   const saveBtn = document.getElementById('saveBtn');
   if (miss) { p.innerHTML = `<span class="muted">${miss}</span>`; saveBtn.disabled = true; return; }
   const sc = scoreDeal(d, s.firstDealer);
-  p.innerHTML = d.passedOut ? '<strong>Passed out · 0</strong>'
-    : `<span class="pv-c">${contractHtml(d)} by ${seatName(d.declarer)}</span>${scorePair(sc.nsScore)}`;
+  p.innerHTML = d.passedOut ? '<strong>Passed out · no score</strong>'
+    : `<span class="pv-c">${contractHtml(d)} by ${seatName(d.declarer)}</span><span class="pv-s ${sc.scoredBy === 'NS' ? 'tns' : 'tew'}">${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}</span>`;
   saveBtn.disabled = false;
 }
 
@@ -498,7 +503,7 @@ async function saveEntry(draftKey) {
     s.deals = s.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, b) => a.dealNo - b.dealNo);
     store.del(draftKey);
     const sc = scoreDeal(out.deal, s.firstDealer);
-    toast(`Saved · Board ${out.deal.boardNum} · N/S ${signed(sc.nsScore)}`);
+    toast(`Saved · Board ${out.deal.boardNum} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
     go(`#/s/${sessionId}`);
     loadDay().catch(() => {});
   } catch (e) {
@@ -510,17 +515,17 @@ async function saveEntry(draftKey) {
         const s = sessionById(sessionId);
         s.deals = s.deals.filter((x) => x.dealNo !== n).concat(cur);
         const sc = scoreDeal(cur, s.firstDealer);
-        alert(`This board was saved on another phone as ${contractText(cur)}${cur.passedOut ? '' : ' by ' + seatName(cur.declarer) + ', ' + outcomeText(cur)} (N/S ${signed(sc.nsScore)}).\n\nYour entry is still on screen. Tap Save again only if yours is the correct one.`);
+        alert(`This board was saved on another phone as ${contractText(cur)}${cur.passedOut ? '' : ' by ' + seatName(cur.declarer) + ', ' + outcomeText(cur)}${sc.scoredBy ? ` (${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)})` : ''}.\n\nYour entry is still on screen. Tap Save again only if yours is the correct one.`);
       } else {
         toast(e.message, 'error');
       }
     } else {
-      toast(e.status === 0 ? 'Not saved — no connection. Your entry is kept; tap Save again.' : e.message, 'error');
+      toast(e.status === 0 ? 'Not saved: no connection. Your entry is kept; tap Save again.' : e.message, 'error');
     }
   }
 }
 
-// ---------- results of one board on other tables ----------
+// ---------- results of one board in other games ----------
 function playsOfBoard(board, sessions) {
   const out = [];
   for (const s of sessions) for (const d of s.deals) if (d.boardNum === board) out.push({ s, d, sc: scoreDeal(d, s.firstDealer) });
@@ -529,32 +534,32 @@ function playsOfBoard(board, sessions) {
 
 function othersOnBoard(board, mySessionId) {
   const plays = playsOfBoard(board, state.data.sessions).filter((p) => p.s.id !== mySessionId);
-  if (!plays.length) return '<p class="muted">No other table has recorded this board yet.</p>';
-  return `<p class="small muted">${plays.length} other table${plays.length > 1 ? 's' : ''}</p>` + plays.map(playCard).join('');
+  if (!plays.length) return '<p class="muted">No other game has recorded this board yet.</p>';
+  return `<p class="muted">${plays.length} other game${plays.length > 1 ? 's' : ''}</p>` + plays.map((p) => playCard(p)).join('');
 }
 
 function playCard({ s, d, sc }, highlight = false) {
   return `<div class="play ${highlight ? 'mine' : ''}">
-    <div class="pl-top"><strong>${esc(s.location)}</strong>${highlight ? '<span class="pill">Your table</span>' : ''}</div>
-    <p class="small muted"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))} · <span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
+    ${highlight ? '<span class="pill">Your game</span>' : ''}
+    <p class="pl-names"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
     <p class="pl-res">${contractHtml(d)}${d.passedOut ? '' : ` by ${seatName(d.declarer)} · ${d.tricks} tricks · lead ${leadHtml(d)}`}</p>
-    <p class="small muted">${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + esc(sc.outcome)}</p>
+    <p class="muted">${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + esc(sc.outcome)}</p>
     <div class="scores">${scorePair(sc.nsScore)}</div></div>`;
 }
 
 // =============================================================
 //  Other results — every board played on a day
 // =============================================================
-async function ensureDate(r) {
-  const date = r.a && /^\d{4}-\d{2}-\d{2}$/.test(r.a) ? r.a : state.data.today;
+async function ensureDate(dateArg, tab) {
+  const date = dateArg && /^\d{4}-\d{2}-\d{2}$/.test(dateArg) ? dateArg : state.data.today;
   if (date === state.data.today) return state.data;
   if (state.viewDate?.date === date) return state.viewDate;
-  $app.innerHTML = shell(r.name === 'day' || r.name === 'pair' ? 'day' : 'others', '<p class="muted center pad">Loading…</p>');
-  try { state.viewDate = await loadDay(date); } catch (e) { $app.innerHTML = shell('day', errorBlock(e.message)); return null; }
+  $app.innerHTML = shell(tab, '<p class="muted center pad">Loading…</p>');
+  try { state.viewDate = await loadDay(date); } catch (e) { $app.innerHTML = shell(tab, errorBlock(e.message)); return null; }
   return state.viewDate;
 }
 
-function dayPicker(data, base) {
+function dayPicker(data) {
   const days = [...new Set([data.today, ...data.days])].sort().reverse();
   return `<label class="sr" for="dayPick">Day</label><select id="dayPick" class="input">${days.map((d) => `<option value="${d}" ${d === data.date ? 'selected' : ''}>${d === data.today ? 'Today' : fmtDate(d)}</option>`).join('')}</select>`;
 }
@@ -564,7 +569,7 @@ function wireDayPicker(base) {
 }
 
 async function renderOthers(r) {
-  const data = await ensureDate(r); if (!data) return;
+  const data = await ensureDate(r.a, 'others'); if (!data) return;
   const boards = new Map();
   for (const s of data.sessions) for (const d of s.deals) boards.set(d.boardNum, (boards.get(d.boardNum) || 0) + 1);
   const m = mine();
@@ -572,44 +577,45 @@ async function renderOthers(r) {
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
     <header class="top"><h1>Other results</h1>${dayPicker(data)}</header>
-    <p class="muted">Tap a board to compare every table’s result.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
+    <p class="muted">Tap a board to compare every game’s result.</p>
+    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} game${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded on this day yet.</p></div>'}`);
   wireDayPicker('others');
 }
 
 async function renderBoard(r) {
-  const data = await ensureDate({ ...r, a: r.b }); if (!data) return;
+  const data = await ensureDate(r.b, 'others'); if (!data) return;
   const board = Number(r.a);
   const m = mine();
   const plays = playsOfBoard(board, data.sessions);
-  const mineFirst = plays.sort((a, b) => (b.s.id === m?.sessionId) - (a.s.id === m?.sessionId));
+  plays.sort((a, b) => (b.s.id === m?.sessionId) - (a.s.id === m?.sessionId));
   $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/others/${data.date}" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${fmtDate(data.date)} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
-    <section class="card">${plays.length ? mineFirst.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
+    <header class="top"><a href="#/others/${data.date}" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${fmtDate(data.date)} · ${plays.length} game${plays.length === 1 ? '' : 's'}</p></header>
+    <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
 }
 
 // =============================================================
 //  Day summary
 // =============================================================
 async function renderDay(r) {
-  const data = await ensureDate(r); if (!data) return;
+  const data = await ensureDate(r.a, 'day'); if (!data) return;
   const rows = daySummary(data.sessions);
-  const tables = data.sessions.length;
+  const games = data.sessions.length;
   $app.innerHTML = shell('day', `
     <header class="top"><h1>Day summary</h1>${dayPicker(data)}</header>
-    <p class="muted small">${tables} table session${tables === 1 ? '' : 's'}. Ranked by total net points: points your pair won minus points the opponents won, over every board you played. Each deal is scored on its own.</p>
+    <p class="muted">${games} game${games === 1 ? '' : 's'}. Pairs are ranked by the total points they won.</p>
     ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}/${data.date}">
         <span class="rk">${x.rank}</span>
-        <span class="rn"><strong>${esc(x.label)}</strong><span class="small muted">${x.completed} of ${x.sessions} session${x.sessions === 1 ? '' : 's'} complete · ${x.boards} board${x.boards === 1 ? '' : 's'}</span>
-          <span class="small muted">Won ${x.pointsFor} · Lost ${x.pointsAgainst} · Avg ${signed(x.avgPerBoard)} per board</span></span>
-        <span class="rv ${x.net > 0 ? 'pos' : x.net < 0 ? 'neg' : ''}">${signed(x.net)}</span></a>`).join('')
+        <span class="rn"><strong>${esc(x.label)}</strong>
+          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} game${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
+          <span class="muted">Average ${x.avgPerBoard} a board</span></span>
+        <span class="rv">${x.points}</span></a>`).join('')
       : '<div class="card"><p class="muted">No results yet for this day.</p></div>'}`);
   wireDayPicker('day');
 }
 
 async function renderPair(r) {
-  const data = await ensureDate({ ...r, a: r.b }); if (!data) return;
+  const data = await ensureDate(r.b, 'day'); if (!data) return;
   const key = r.a;
   const row = daySummary(data.sessions).find((x) => x.key === key);
   const items = [];
@@ -619,18 +625,18 @@ async function renderPair(r) {
     const scored = s.deals.map((d) => ({ d, sc: scoreDeal(d, s.firstDealer) }));
     const t = sessionTotals(scored.map((x) => x.sc));
     const opp = side === 'NS' ? pairLabel(s.ewP1, s.ewP2) : pairLabel(s.nsP1, s.nsP2);
-    const net = side === 'NS' ? t.net : -t.net;
+    const us = side === 'NS' ? t.nsPoints : t.ewPoints, them = side === 'NS' ? t.ewPoints : t.nsPoints;
     items.push(`<section class="card">
-      <div class="pl-top"><strong>${esc(s.location)}</strong><span class="pill ${side === 'NS' ? 'ns' : 'ew'}">${side === 'NS' ? 'N/S' : 'E/W'}</span></div>
-      <p class="small muted">v ${esc(opp)} · ${t.played} of 4 boards · Net <strong>${signed(net)}</strong></p>
+      <div class="pl-top"><strong>v ${esc(opp)}</strong><span class="pill ${side === 'NS' ? 'ns' : 'ew'}">${short(side)}</span></div>
+      <p class="muted">${t.played} of 4 boards · Won ${us} · Opponents ${them}${t.complete ? (us > them ? ' · <strong>Won</strong>' : us < them ? ' · Lost' : ' · All square') : ''}</p>
       <table class="mini"><tbody>${scored.map(({ d, sc }) => {
-        const mineScore = side === 'NS' ? sc.nsScore : sc.ewScore;
-        return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td class="small">${esc(sc.outcome)}</td><td class="num ${mineScore > 0 ? 'pos' : mineScore < 0 ? 'neg' : ''}">${signed(mineScore)}</td></tr>`;
+        const pts = side === 'NS' ? sc.nsPoints : sc.ewPoints;
+        return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${esc(sc.outcome)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
       }).join('')}</tbody></table></section>`);
   }
   $app.innerHTML = shell('day', `
     <header class="top"><a href="#/day/${data.date}" class="back">‹ Day summary</a><h1>${esc(row?.label || 'Pair')}</h1>
-    ${row ? `<p class="muted">Rank ${row.rank} · Net ${signed(row.net)} · ${row.boards} boards</p>` : ''}</header>
+    ${row ? `<p class="muted">Rank ${row.rank} · ${row.points} points · ${row.boards} boards</p>` : ''}</header>
     ${items.join('') || '<p class="muted">No boards found.</p>'}`);
 }
 
@@ -652,9 +658,9 @@ function fmtDate(d) {
   return new Date(y, m - 1, day).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' });
 }
 
-// ---------- keep results fresh (other tables' results arrive every 20s) ----------
+// ---------- keep results fresh (other games' results arrive every 20s) ----------
 setInterval(async () => {
-  if (document.hidden || !state.data) return;
+  if (document.hidden || !state.data || document.getElementById('sheet')) return;
   const r = route();
   if (r.name === 'login' || r.name === 'new' || r.name === 'edit') return;
   try {
@@ -663,8 +669,9 @@ setInterval(async () => {
       const s = sessionById(r.a);
       const o = document.getElementById('others');
       if (s && o) o.innerHTML = othersOnBoard(boardNumberFor(Number(r.b), s.startBoard), s.id);
-    } else if (!r.a || r.a === state.data.today || r.name === 's' || r.name === 'board' || r.name === 'pair') {
-      const y = window.scrollY; render().then(() => window.scrollTo(0, y));
+    } else {
+      const viewingOtherDay = (r.name === 'day' || r.name === 'others') ? (r.a && r.a !== state.data.today) : (r.b && r.b !== state.data.today);
+      if (!viewingOtherDay) { const y = window.scrollY; await render(); window.scrollTo(0, y); }
     }
   } catch { /* offline — try again next time */ }
 }, 20000);

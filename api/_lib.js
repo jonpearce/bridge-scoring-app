@@ -146,6 +146,8 @@ export const toDeal = (r) => ({
   tricks: r.tricks,
   leadSuit: r.lead_suit,
   leadRank: r.lead_rank,
+  vulNs: r.vul_ns ?? undefined,
+  vulEw: r.vul_ew ?? undefined,
   nsScore: r.ns_score,
   updatedAt: r.updated_at,
 });

@@ -407,3 +407,11 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 .board.todo.next { border: 3px solid var(--green-2); border-style: solid; background: #eef6f0; }
 .nextlbl { color: var(--green); }
 .board.todo:not(.next) .btn { background: #fff; color: var(--green); border-color: var(--line); }
+
+/* Organiser tools (13 Oct 2026) */
+:root { --danger: #a1271f; }
+.organiser { border: 2px solid var(--danger); }
+.organiser h2 { color: var(--danger); }
+.org-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.small-btn { min-height: 48px; padding: 8px 14px; font-size: 1rem; }

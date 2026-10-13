@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-secret';
 process.env.SUPABASE_URL = 'https://fake.supabase.test';
+process.env.ADMIN_CODE = 'Boss';
 
 // ---------- fake PostgREST ----------
 const T = { chi_events: [], chi_sessions: [], chi_deals: [] };
@@ -43,6 +44,10 @@ globalThis.fetch = async (url, opts = {}) => {
       T[table].push(row);
       out = [embed(table, select, row)];
     }
+  } else if (opts.method === 'DELETE') {
+    out = T[table].filter((r) => match(r, filters));
+    T[table] = T[table].filter((r) => !match(r, filters));
+    if (table === 'chi_sessions') { const ids = new Set(out.map((r) => r.id)); T.chi_deals = T.chi_deals.filter((d) => !ids.has(d.session_id)); }
   } else if (opts.method === 'PATCH') {
     out = T[table].filter((r) => match(r, filters));
     out.forEach((r) => Object.assign(r, body, { updated_at: now() }));
@@ -65,9 +70,10 @@ async function call(mod, method, body, query = '') {
   return { status: res.statusCode, body: JSON.parse(res.out) };
 }
 
-let login, sessions, deal;
+let login, sessions, deal, admin;
 before(async () => {
   login = await import('../api/login.js');
+  admin = await import('../api/admin.js');
   sessions = await import('../api/sessions.js');
   deal = await import('../api/deal.js');
 });
@@ -187,4 +193,39 @@ test('board numbers and dealer are locked once play has started', async () => {
   assert.equal(ok.status, 200);
   assert.equal(ok.body.session.nsP2, 'Margaret');
   assert.equal(ok.body.session.location, 'Jon & Margaret v Ann & Bob');
+});
+
+test('players cannot use organiser actions', async () => {
+  const r = await call(admin, 'POST', { action: 'clearDay', date: '2026-10-13' });
+  assert.equal(r.status, 403);
+});
+
+test('organiser code logs in as organiser (any case)', async () => {
+  const r = await call(login, 'POST', { code: ' boss ' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.admin, true);
+  assert.equal((await call(login, 'GET')).body.admin, true);
+});
+
+test('organiser can delete one game, and its boards go with it', async () => {
+  const before = T.chi_sessions.length;
+  const r = await call(admin, 'POST', { action: 'deleteGame', id: sid });
+  assert.equal(r.status, 200);
+  assert.equal(T.chi_sessions.length, before - 1);
+  assert.equal(T.chi_deals.filter((d) => d.session_id === sid).length, 0);
+});
+
+test('organiser can clear a whole day', async () => {
+  const day = await call(sessions, 'GET');
+  assert.ok(day.body.sessions.length >= 1);
+  const r = await call(admin, 'POST', { action: 'clearDay', date: day.body.date });
+  assert.equal(r.status, 200);
+  assert.equal((await call(sessions, 'GET')).body.sessions.length, 0);
+  assert.equal(T.chi_events.length, 0);
+  assert.equal(T.chi_deals.length, 0);
+});
+
+test('leaving organiser mode logs the phone out', async () => {
+  await call(login, 'DELETE');
+  assert.equal((await call(login, 'GET')).body.ok, false);
 });

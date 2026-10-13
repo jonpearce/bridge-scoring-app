@@ -64,6 +64,13 @@ recalculated.
    at the bottom; boards already saved are kept. Each new day starts fresh on
    its own.
 
+8. **Organiser (super-user):** log in with the organiser code instead of the
+   players' code. On **Day summary**, an *Organiser* section lists every game
+   that day with a **Delete** button, plus **Clear all games on this day** to
+   start completely fresh. Both ask "are you sure?" first and can't be undone.
+   **Leave organiser mode** logs that phone out. Players never see these
+   buttons, and the server refuses organiser actions from player phones.
+
 ---
 
 ## Files
@@ -75,6 +82,7 @@ recalculated.
 | `api/login.js` | Checks the access code, sets a 30-day signed cookie |
 | `api/sessions.js` | Start, edit and list games for a day |
 | `api/deal.js` | Save or correct one board; calculates the official score |
+| `api/admin.js` | Organiser only: delete a game, or clear a day |
 | `api/_lib.js` | Shared server helpers (database access, cookie signing) |
 | `tests/chicago.test.mjs` | Scoring tests |
 | `tests/api.test.mjs` | Server tests against an in-memory database |
@@ -113,6 +121,7 @@ phones.
 | Name | Needed | Notes |
 | --- | --- | --- |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase secret key. Never put it in the code. |
-| `ACCESS_CODE` | No | Defaults to `golf` |
+| `ACCESS_CODE` | No | Players' code. Defaults to `golf` |
+| `ADMIN_CODE` | For organiser mode | The organiser's code word. Must be different from the players' code. If missing, organiser mode is off. |
 | `SUPABASE_URL` | No | Defaults to this project's Supabase address |
 | `APP_TIME_ZONE` | No | Defaults to `Australia/Melbourne` (decides what "today" is) |

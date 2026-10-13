@@ -33,7 +33,7 @@ const store = {
 };
 
 // ---------- state ----------
-const state = { data: null, viewDate: null, entry: null };
+const state = { data: null, viewDate: null, entry: null, admin: false };
 const mine = () => {
   const m = store.get('my');
   return m && state.data && m.date === state.data.today ? m : null;
@@ -144,8 +144,10 @@ function renderLogin() {
     ev.preventDefault();
     const btn = f.querySelector('button'); btn.disabled = true; btn.textContent = 'Checking…';
     try {
-      await api('login', { method: 'POST', body: { code: f.code.value } });
+      const out = await api('login', { method: 'POST', body: { code: f.code.value } });
+      state.admin = !!out.admin;
       state.data = null;
+      if (out.admin) toast('Organiser mode: see Day summary');
       go('#/play');
     } catch (e) {
       document.getElementById('loginErr').textContent = e.message;
@@ -302,7 +304,13 @@ function dealsFor(s) {
 
 function renderGame(r) {
   const s = sessionById(r.a);
-  if (!s) { $app.innerHTML = shell('play', errorBlock('This game could not be found.')); return; }
+  if (!s) {
+    // The organiser may have deleted this game, or cleared the day.
+    if (mine()?.sessionId === r.a) store.del('my');
+    $app.innerHTML = shell('play', `<div class="card"><h2>This game is no longer here</h2>
+      <p>It may have been cleared by the organiser.</p><a class="btn primary big block" href="#/play">Go to the Play screen</a></div>`);
+    return;
+  }
   const m = mine();
   const isMine = m?.sessionId === s.id;
   const rows = dealsFor(s);
@@ -630,7 +638,7 @@ async function renderOthers(r) {
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
     <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the game' : 'Back'}</a><h1>Other results</h1>${dayPicker(data)}</header>
-    <p class="muted">Tap a board to compare every game’s result.</p>
+    <p class="muted">Tap a board to compare every game’s result for that board.</p>
     ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} game${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded on this day yet.</p></div>'}`);
   wireDayPicker('others');
@@ -663,8 +671,68 @@ async function renderDay(r) {
           <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} game${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
           <span class="muted">Average ${x.avgPerBoard} a board</span></span>
         <span class="rv">${x.points}</span></a>`).join('')
-      : '<div class="card"><p class="muted">No results yet for this day.</p></div>'}`);
+      : '<div class="card"><p class="muted">No results yet for this day.</p></div>'}
+    ${state.admin ? organiserPanel(data) : ''}`);
   wireDayPicker('day');
+  if (state.admin) wireOrganiser(data);
+}
+
+// ---------- organiser (super-user) tools: only on phones logged in with the organiser code ----------
+function organiserPanel(data) {
+  const games = data.sessions;
+  return `<section class="card organiser">
+    <h2>Organiser</h2>
+    <p class="muted">Only phones logged in with the organiser code see this.</p>
+    ${games.length ? `<div class="stack">${games.map((g) => `<div class="org-row">
+        <span><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong><br>
+        <span class="muted">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></span>
+        <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
+      <button class="btn danger big block" id="clearDay">Clear all ${games.length} game${games.length === 1 ? '' : 's'} on this day</button>`
+      : '<p class="muted">No games on this day.</p>'}
+    <button class="btn ghost block" id="leaveOrg">Leave organiser mode</button>
+  </section>`;
+}
+
+function wireOrganiser(data) {
+  const after = async (msg) => {
+    toast(msg);
+    state.viewDate = null;
+    const m = mine();
+    await loadDay();
+    if (m && !sessionById(m.sessionId)) store.del('my');
+    if (data.date !== state.data.today) state.viewDate = await loadDay(data.date).catch(() => null);
+    rerenderKeepScroll();
+  };
+  $app.querySelectorAll('[data-delgame]').forEach((b) => (b.onclick = () => {
+    const g = data.sessions.find((x) => x.id === b.dataset.delgame);
+    sheet(`<h2>Delete this game?</h2>
+      <p><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong>, boards ${g.startBoard}–${g.startBoard + 3}.</p>
+      <p>Its ${g.deals.length} saved board${g.deals.length === 1 ? '' : 's'} will be removed for everyone. This can’t be undone.</p>
+      <button class="btn danger big block" id="yes">Yes, delete this game</button>`, (root) => {
+      root.querySelector('#yes').onclick = async () => {
+        closeSheet();
+        try { await api('admin', { method: 'POST', body: { action: 'deleteGame', id: g.id } }); await after('Game deleted'); }
+        catch (e) { toast(e.message, 'error'); }
+      };
+    });
+  }));
+  document.getElementById('clearDay')?.addEventListener('click', () => {
+    const n = data.sessions.length, boards = data.sessions.reduce((t, g) => t + g.deals.length, 0);
+    sheet(`<h2>Clear everything for ${data.date === state.data.today ? 'today' : esc(fmtDate(data.date))}?</h2>
+      <p>This deletes <strong>all ${n} game${n === 1 ? '' : 's'}</strong> and <strong>${boards} saved board${boards === 1 ? '' : 's'}</strong> for everyone, so you can start again. This can’t be undone.</p>
+      <button class="btn danger big block" id="yes">Yes, clear everything</button>`, (root) => {
+      root.querySelector('#yes').onclick = async () => {
+        closeSheet();
+        try { const out = await api('admin', { method: 'POST', body: { action: 'clearDay', date: data.date } }); await after(`Cleared ${out.deletedGames} game${out.deletedGames === 1 ? '' : 's'}`); }
+        catch (e) { toast(e.message, 'error'); }
+      };
+    });
+  });
+  document.getElementById('leaveOrg').onclick = async () => {
+    try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
+    state.admin = false; state.data = null;
+    go('#/login');
+  };
 }
 
 async function renderPair(r) {
@@ -732,7 +800,8 @@ setInterval(async () => {
 // ---------- start ----------
 (async () => {
   try {
-    const { ok } = await api('login');
+    const { ok, admin } = await api('login');
+    state.admin = !!admin;
     if (!ok) return go('#/login');
   } catch (e) {
     $app.innerHTML = `<main class="screen">${errorBlock(e.message)}</main>`;

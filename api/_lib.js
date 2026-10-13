@@ -65,29 +65,59 @@ export function keyKind() {
 const signingKey = () => crypto.createHash('sha256').update('chi-cookie:' + SERVICE_KEY).digest();
 const sign = (s) => crypto.createHmac('sha256', signingKey()).update(s).digest('base64url');
 
-export function codeMatches(code) {
+// Organiser (super-user) code: set ADMIN_CODE in Vercel. If it is not set,
+// organiser mode is switched off. It must differ from the players' code.
+const ADMIN_CODE = (process.env.ADMIN_CODE || '').trim().toLowerCase();
+
+function sameText(code, target) {
   const a = Buffer.from(String(code || '').trim().toLowerCase());
-  const b = Buffer.from(ACCESS_CODE);
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  const b = Buffer.from(target);
+  return target.length > 0 && a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-export function setAuthCookie(res) {
+/** 'admin' for the organiser code, 'player' for the players' code, else null. */
+export function roleForCode(code) {
+  if (ADMIN_CODE && ADMIN_CODE !== ACCESS_CODE && sameText(code, ADMIN_CODE)) return 'admin';
+  if (sameText(code, ACCESS_CODE)) return 'player';
+  return null;
+}
+export const codeMatches = (code) => roleForCode(code) !== null;
+export const adminEnabled = () => !!ADMIN_CODE && ADMIN_CODE !== ACCESS_CODE;
+
+export function setAuthCookie(res, role = 'player') {
   const exp = Date.now() + COOKIE_DAYS * 864e5;
-  const value = `${exp}.${sign(String(exp))}`;
+  const value = `${exp}.${role}.${sign(`${exp}.${role}`)}`;
   res.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; Max-Age=${COOKIE_DAYS * 86400}; HttpOnly; Secure; SameSite=Lax`);
 }
 
-export function isAuthed(req) {
-  const m = (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
-  if (!m) return false;
-  const [exp, sig] = m[1].split('.');
-  if (!exp || !sig || Number(exp) < Date.now()) return false;
-  const good = sign(exp);
-  return sig.length === good.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good));
+export function clearAuthCookie(res) {
+  res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`);
 }
+
+/** Returns 'admin', 'player' or null. */
+export function authRole(req) {
+  const m = (req.headers.cookie || '').match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
+  if (!m) return null;
+  const parts = m[1].split('.');
+  let exp, role, sig, signed;
+  if (parts.length === 2) { [exp, sig] = parts; role = 'player'; signed = exp; }        // cookies issued before 13 Oct
+  else if (parts.length === 3) { [exp, role, sig] = parts; signed = `${exp}.${role}`; }
+  else return null;
+  if (!exp || !sig || Number(exp) < Date.now() || !['player', 'admin'].includes(role)) return null;
+  const good = sign(signed);
+  if (!(sig.length === good.length && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(good)))) return null;
+  if (role === 'admin' && !adminEnabled()) return 'player';
+  return role;
+}
+export const isAuthed = (req) => authRole(req) !== null;
 
 export function requireAuth(req) {
   if (!isAuthed(req)) throw new HttpError(401, 'Please enter the access code.');
+}
+
+export function requireAdmin(req) {
+  requireAuth(req);
+  if (authRole(req) !== 'admin') throw new HttpError(403, 'Only the organiser can do this.');
 }
 
 // ---------- Supabase REST (server-side only, secret key never leaves here) ----------

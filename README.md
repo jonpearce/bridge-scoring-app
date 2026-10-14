@@ -54,7 +54,7 @@ recalculated.
    with − / + → optionally the lead card and suit → **Save result**. The
    score shows before you save.
    - *Board was passed out* records no score.
-   - **See previous Board Ns** (top right) shows every table's result for the
+   - **See previous Board Ns** (top right of each board still to enter on the table screen, and of the results entry screen) shows every table's result for the
      board before this one; **Return to Board …** comes back with your entry
      untouched. It is greyed out until someone has entered that board.
 4. **Correct a mistake:** tap the board's card, change it, Save. The same

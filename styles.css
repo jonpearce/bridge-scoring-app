@@ -463,3 +463,5 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .entry-toprow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .prevlink { font-weight: 700; font-size: .95rem; color: var(--green, #14402e); text-decoration: underline; text-underline-offset: 3px; }
 .prevlink.off { color: #a9a49a; text-decoration: none; cursor: default; }
+.board .btitle { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; flex-wrap: wrap; }
+.board .btitle .prevlink { font-size: .9rem; }

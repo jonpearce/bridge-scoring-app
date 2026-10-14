@@ -377,7 +377,8 @@ function renderGame(r) {
   const next = rows.find((x) => !x.d);
 
   const card = (x) => {
-    const head = `<div class="bhead"><span class="bnum">Board ${x.board}${x.d ? ' <span class="played">– played</span>' : ''}</span>
+    const title = `<span class="bnum">Board ${x.board}${x.d ? ' <span class="played">– played</span>' : ''}</span>`;
+    const head = `<div class="bhead">${x.d ? title : `<div class="btitle">${title}${prevBoardLink(x.board - 1, `t:${s.id}`)}</div>`}
       <span class="vultog">${['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
     if (!x.d) {
       const isNext = next && next.n === x.n;
@@ -519,6 +520,15 @@ function confirmLogout(extra = '') {
   });
 }
 
+// "See previous Board Ns" link: opens that board at every table; `ret` says where Return goes.
+// Greyed out (not a link) until someone has entered that board in this session.
+function prevBoardLink(prev, ret) {
+  if (prev < 1) return '';
+  return playsOfBoard(prev, state.data.sessions).length
+    ? `<a class="prevlink" href="#/board/${prev}/${ret}">See previous Board ${prev}s ›</a>`
+    : `<span class="prevlink off" aria-disabled="true">See previous Board ${prev}s</span>`;
+}
+
 function renderEntry(r) {
   const s = sessionById(r.a);
   const n = Number(r.b);
@@ -536,10 +546,7 @@ function renderEntry(r) {
   const board = boardNumberFor(n, s.startBoard);
   // Link to the previous board's results at every table (greyed out if nobody has entered it yet).
   const prev = board - 1;
-  const prevHas = prev >= 1 && playsOfBoard(prev, state.data.sessions).length > 0;
-  const prevLink = prev < 1 ? ''
-    : prevHas ? `<a class="prevlink" href="#/board/${prev}/${s.id}:${n}">See previous Board ${prev}s ›</a>`
-    : `<span class="prevlink off" aria-disabled="true">See previous Board ${prev}s</span>`;
+  const prevLink = prevBoardLink(prev, `${s.id}:${n}`);
 
   $app.innerHTML = shell('play', `
     <header class="entry-head">
@@ -756,9 +763,11 @@ async function renderBoard(r) {
   plays.sort((a, b) => (b.s.id === m?.sessionId) - (a.s.id === m?.sessionId));
   // Opened from the results-entry screen ("See previous Board Ns")? Then go back there.
   const ret = /^([0-9a-f-]{36}):([1-4])$/i.exec(r.b || '');
-  const retSess = ret && sessionById(ret[1]);
-  const back = retSess
+  const retT = /^t:([0-9a-f-]{36})$/i.exec(r.b || '');
+  const retSess = (ret && sessionById(ret[1])) || (retT && sessionById(retT[1]));
+  const back = retSess && ret
     ? `<a href="#/deal/${ret[1]}/${ret[2]}" class="back">‹ Return to Board ${boardNumberFor(Number(ret[2]), retSess.startBoard)}</a>`
+    : retSess ? `<a href="#/s/${retSess.id}" class="back">‹ Return to the table</a>`
     : '<a href="#/others" class="back">‹ All boards</a>';
   $app.innerHTML = shell(retSess ? 'play' : 'others', `
     <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>

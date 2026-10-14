@@ -439,3 +439,15 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action: manipulation; }
 /* "Board" label on Other results tiles */
 .bcell .blbl { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+
+/* Results screen: every chosen option uses the same gold, so it's easy to
+   glance down and check everything has been entered (14 Oct 2026). */
+:root { --pick-bg: #f5c84c; --pick-line: #b07d0e; --pick-ink: #1b2420; }
+#entry .key.on,
+#entry .decl .key.on, #entry .decl .key.ns.on, #entry .decl .key.ew.on,
+#entry .vulseg button.on, #entry .vulseg button.isvul.on, #entry .vulseg button.nv.on {
+  background: var(--pick-bg); border: 2px solid var(--pick-line); color: var(--pick-ink);
+  box-shadow: 0 2px 0 var(--pick-line);
+}
+#entry .key.on .suit { color: var(--pick-ink); }
+#entry .key.on .suit.red { color: #a3201a; }

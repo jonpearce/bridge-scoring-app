@@ -59,7 +59,7 @@ recalculated.
 6. **Day summary:** rankings for today (or an earlier day). Tap a pair for
    its board-by-board history.
 7. **New table (next four boards, usually new opponents):** once all four
-   boards are in, tap **All 4 boards done: set up a new table**. The next first
+   boards are in, tap **All 4 boards done & displayed below: set up a new table**. The next first
    board is suggested automatically (it goes back to board 1 after the organiser
    clears the day, after logging out, or on a new day). To stop part-way, use **Leave this table**
    at the bottom, then choose **Set up a new table** or **Join a different table**;

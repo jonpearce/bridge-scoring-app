@@ -368,7 +368,7 @@ function renderGame(r) {
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done ? totalsCard(t) : ''}
-    ${done === 4 ? '<button class="btn primary big block" data-newgame>All 4 boards done: set up a new table</button>' : ''}
+    ${done === 4 ? '<button class="btn primary big block" data-newgame>All 4 boards done &amp; displayed below: set up a new table</button>' : ''}
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <div class="stack foot">

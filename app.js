@@ -202,12 +202,31 @@ function renderPlay() {
 
 function chooseSide(sessionId) {
   const s = sessionById(sessionId);
+  const join = (side) => {
+    store.set('my', { eventId: curEventId(), sessionId, side });
+    // Remember this pair's names so later tables recognise them too.
+    const names = side === 'NS' ? [s.nsP1, s.nsP2] : [s.ewP1, s.ewP2];
+    if (names[0] && names[1]) store.set('prefs', { ...store.get('prefs', {}), names });
+  };
+  // If this phone's remembered pair matches exactly one pair at this table, skip the question.
+  const mineNames = store.get('prefs', {}).names;
+  if (mineNames?.length === 2 && mineNames[0] && mineNames[1]) {
+    const k = pairKey(mineNames[0], mineNames[1]);
+    const ns = k === pairKey(s.nsP1, s.nsP2), ew = k === pairKey(s.ewP1, s.ewP2);
+    if (ns !== ew) {
+      const side = ns ? 'NS' : 'EW';
+      join(side);
+      toast(`Joined as ${side === 'NS' ? 'North/South' : 'East/West'}`);
+      go(`#/s/${sessionId}`);
+      return;
+    }
+  }
   sheet(`<h2>Which pair are you?</h2>
     <div class="stack">
       <button class="btn big ns" data-side="NS">North/South<br><span>${esc(pairLabel(s.nsP1, s.nsP2))}</span></button>
       <button class="btn big ew" data-side="EW">East/West<br><span>${esc(pairLabel(s.ewP1, s.ewP2))}</span></button>
     </div>`, (root) => root.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => {
-      store.set('my', { eventId: curEventId(), sessionId, side: b.dataset.side });
+      join(b.dataset.side);
       closeSheet(); go(`#/s/${sessionId}`);
     })));
 }

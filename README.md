@@ -48,6 +48,7 @@ recalculated.
    - The other pair can instead tap the table under **Join a table already
      started**. If the phone already remembers that pair's two names, it joins
      straight away on the right side; otherwise it asks North/South or East/West.
+   - Picked the wrong side? Tap **Swap** next to "You are …" on the table screen.
 3. **Enter each board:** the next board to enter is highlighted in green; tap its *Enter result*, then (if needed) change the
    vulnerability, then level → suit → (doubled?) → declarer → adjust tricks
    with − / + → optionally the lead card and suit → **Save result**. The

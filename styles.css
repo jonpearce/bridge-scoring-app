@@ -454,3 +454,7 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 /* Session list: keep the date and time on one line on small phones */
 #sessPick { padding-right: 36px; }
 @media (max-width: 360px) { #sessPick { font-size: 1rem; padding-left: 10px; } }
+
+/* "Swap" next to "You are North/South" */
+.you-are { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.btn.swap { width: auto; min-height: 0; padding: 4px 14px; font-size: .9rem; font-weight: 700; border-radius: 999px; }

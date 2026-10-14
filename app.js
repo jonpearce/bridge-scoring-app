@@ -403,7 +403,7 @@ function renderGame(r) {
   $app.innerHTML = shell('play', `
     <header class="top">
       <p class="pairs"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
-      ${isMine ? `<p>You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong></p>` : ''}
+      ${isMine ? `<p class="you-are">You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong> <button class="btn small swap" id="swapSide" type="button">Swap</button></p>` : ''}
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done ? totalsCard(t) : ''}
@@ -439,6 +439,15 @@ function renderGame(r) {
     });
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
+  document.getElementById('swapSide')?.addEventListener('click', () => {
+    const side = m.side === 'NS' ? 'EW' : 'NS';
+    store.set('my', { ...m, side });
+    // Remember the new pair's names so joining later tables matches the right side.
+    const names = side === 'NS' ? [s.nsP1, s.nsP2] : [s.ewP1, s.ewP2];
+    if (names[0] && names[1]) store.set('prefs', { ...store.get('prefs', {}), names });
+    toast(`You are now ${sideName(side)}`);
+    render();
+  });
   wireLogout();
   $app.querySelectorAll('[data-vultog]').forEach((b) => (b.onclick = () => {
     const [n, k] = b.dataset.vultog.split(':');

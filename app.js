@@ -198,11 +198,11 @@ function renderPlay() {
       }).join('')
     : '';
   const joinCard = games.length
-    ? `<section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`
+    ? `<section class="card"><h2>…or join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`
     : '<section class="card"><p class="muted">No tables have started yet in this session.</p></section>';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1>${sessionPicker()}</header>
-    <a class="btn primary big block" href="#/new">Set up a new table</a>
+    <a class="btn primary big block" href="#/new">Set up a new table…</a>
     ${joinCard}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();
@@ -534,10 +534,16 @@ function renderEntry(r) {
   const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
   state.entry = { sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
   const board = boardNumberFor(n, s.startBoard);
+  // Link to the previous board's results at every table (greyed out if nobody has entered it yet).
+  const prev = board - 1;
+  const prevHas = prev >= 1 && playsOfBoard(prev, state.data.sessions).length > 0;
+  const prevLink = prev < 1 ? ''
+    : prevHas ? `<a class="prevlink" href="#/board/${prev}/${s.id}:${n}">See previous Board ${prev}s ›</a>`
+    : `<span class="prevlink off" aria-disabled="true">See previous Board ${prev}s</span>`;
 
   $app.innerHTML = shell('play', `
     <header class="entry-head">
-      <a href="#/s/${s.id}" class="back">‹ Back to the table</a>
+      <div class="entry-toprow"><a href="#/s/${s.id}" class="back">‹ Back to the table</a>${prevLink}</div>
       <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
     </header>
     ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
@@ -748,8 +754,14 @@ async function renderBoard(r) {
   const m = mine();
   const plays = playsOfBoard(board, data.sessions);
   plays.sort((a, b) => (b.s.id === m?.sessionId) - (a.s.id === m?.sessionId));
-  $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/others" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
+  // Opened from the results-entry screen ("See previous Board Ns")? Then go back there.
+  const ret = /^([0-9a-f-]{36}):([1-4])$/i.exec(r.b || '');
+  const retSess = ret && sessionById(ret[1]);
+  const back = retSess
+    ? `<a href="#/deal/${ret[1]}/${ret[2]}" class="back">‹ Return to Board ${boardNumberFor(Number(ret[2]), retSess.startBoard)}</a>`
+    : '<a href="#/others" class="back">‹ All boards</a>';
+  $app.innerHTML = shell(retSess ? 'play' : 'others', `
+    <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
     <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
 }
 

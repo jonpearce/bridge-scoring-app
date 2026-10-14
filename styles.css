@@ -458,3 +458,8 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 /* "Swap" next to "You are North/South" */
 .you-are { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .btn.swap { width: auto; min-height: 0; padding: 4px 14px; font-size: .9rem; font-weight: 700; border-radius: 999px; }
+
+/* Results entry: "See previous Board Ns" at top right */
+.entry-toprow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.prevlink { font-weight: 700; font-size: .95rem; color: var(--green, #14402e); text-decoration: underline; text-underline-offset: 3px; }
+.prevlink.off { color: #a9a49a; text-decoration: none; cursor: default; }

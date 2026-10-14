@@ -152,15 +152,39 @@ export function validDate(d) {
   return typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
 }
 
-export async function eventFor(date, create) {
-  const found = await db(`chi_events?play_date=eq.${date}&name=eq.Social%20bridge&select=id,play_date`);
-  if (found.length || !create) return found[0] || null;
-  const made = await db('chi_events?on_conflict=play_date,name', {
+// ---------- playing sessions ----------
+// A "session" is one row in chi_events. The organiser starts a new one and
+// every table then starts empty. Phones follow the newest session unless the
+// player picks an earlier one from the list.
+const EVENT_COLS = 'id,play_date,name,created_at';
+export const toEvent = (e) => e && { id: e.id, playDate: e.play_date, startedAt: e.created_at };
+const UUID_RE = /^[0-9a-f-]{36}$/i;
+
+export async function listEvents(limit = 40) {
+  const rows = await db(`chi_events?select=${EVENT_COLS}&order=created_at.desc&limit=${limit}`);
+  return rows.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+
+export async function getEvent(id) {
+  if (!UUID_RE.test(id || '')) return null;
+  return (await db(`chi_events?id=eq.${id}&select=${EVENT_COLS}`))[0] || null;
+}
+
+export async function createEvent() {
+  const made = await db(`chi_events?select=${EVENT_COLS}`, {
     method: 'POST',
-    body: { play_date: date, name: 'Social bridge' },
-    prefer: 'resolution=merge-duplicates,return=representation',
+    body: { play_date: todayLocal(), name: `Session ${new Date().toISOString()}` },
+    prefer: 'return=representation',
   });
   return made[0];
+}
+
+/** The chosen session, else the newest one; creates the first ever session if none exist. */
+export async function resolveEvent(id) {
+  const chosen = id ? await getEvent(id) : null;
+  if (chosen) return chosen;
+  const latest = (await listEvents(1))[0];
+  return latest || createEvent();
 }
 
 // ---------- shape conversion ----------

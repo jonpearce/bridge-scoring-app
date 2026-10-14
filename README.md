@@ -24,7 +24,8 @@ small server functions in `/api`) · Supabase (database) · GitHub (code).
 | Vulnerability | Defaults to standard Chicago: deal 1 neither, deals 2 and 3 the **dealer's side**, deal 4 both (dealer rotates N → E → S → W from the first dealer). **It can be changed for any board — on the scoring screen, or by tapping the N/S or E/W vulnerability button on the board's tile on the table screen (each one switches on or off).** The vulnerability used is saved with the board. |
 | Passed-out board | Nobody scores; it counts as one of the four. |
 | Table result | Each pair's total points over the four boards; the higher total wins by the difference. |
-| Day ranking | Total points each pair won over the day; ties broken by average points per board. Each table is one shared record, so no board is counted twice. |
+| Sessions | The organiser starts a **new session** before play; every table then starts empty and all phones move to it. Earlier sessions can still be chosen from the **Session** list (date and start time) on Play, Other results and Day summary. |
+| Day ranking | Total points each pair won in the chosen session; ties broken by average points per board. Each table is one shared record, so no board is counted twice. |
 
 Inside the database each board's score is one number, `ns_score`: + means
 the points went to North/South, − means they went to East/West. The screens
@@ -66,7 +67,7 @@ recalculated.
    boards already saved are kept. Each new day starts fresh on
    its own.
 
-8. **Log out:** at the bottom of the results screen or **Day summary**, tap **Log out** (for
+8. **Log out:** at the bottom of the Play, Other results and Day summary screens, tap **Log out** (for
    example to log back in with the organiser code).
 9. **Organiser (super-user):** log in with the organiser code instead of the
    players' code. On **Day summary**, an *Organiser* section lists every table
@@ -86,7 +87,7 @@ recalculated.
 | `api/login.js` | Checks the access code, sets a 30-day signed cookie |
 | `api/sessions.js` | Start, edit and list tables for a day |
 | `api/deal.js` | Save or correct one board; calculates the official score |
-| `api/admin.js` | Organiser only: delete a table, or clear a day |
+| `api/admin.js` | Organiser only: start a new session, delete a table, or clear a session |
 | `api/_lib.js` | Shared server helpers (database access, cookie signing) |
 | `tests/chicago.test.mjs` | Scoring tests |
 | `tests/api.test.mjs` | Server tests against an in-memory database |
@@ -107,11 +108,11 @@ The new app uses three **new** tables. The old app's tables (`sessions`,
 
 | Table | One row per |
 | --- | --- |
-| `chi_events` | Playing day |
+| `chi_events` | Playing session (started by the organiser; its start time is shown in the Session list) |
 | `chi_sessions` | One table: first board, first dealer, four names (the `location` column holds a label made from the names) |
 | `chi_deals` | One board at a table: contract, declarer, tricks, lead, vulnerability used, `ns_score`. Unique per table + deal number, so corrections never duplicate. Indexed by board number for comparisons. |
 
-Board numbers identify a deal **within a playing day**. If separate events
+Board numbers identify a deal **within a playing session**. If separate events
 ever reuse board numbers on the same day, add an event name to `chi_events`
 (the table already allows several events per date).
 

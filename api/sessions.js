@@ -1,23 +1,30 @@
 import {
-  handler, send, readJson, requireAuth, db, HttpError, todayLocal, validDate, eventFor, toSession, cleanName,
+  handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
+  listEvents, resolveEvent, toEvent,
 } from './_lib.js';
 import { SEATS } from '../lib/chicago.js';
 
 const SELECT = 'id,location,start_board,first_dealer,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
-// GET   /api/sessions?date=YYYY-MM-DD  → all games (with boards) for that day
-// POST  /api/sessions  { startBoard, firstDealer, nsP1, nsP2, ewP1, ewP2, clientToken }
+// GET   /api/sessions?event=ID  → every table (with boards) in that playing session
+//                                 (newest session if no ID), plus the list of sessions
+// POST  /api/sessions  { eventId, startBoard, firstDealer, nsP1, nsP2, ewP1, ewP2, clientToken }
 // PATCH /api/sessions  { id, ...fields }  → edit names; board/dealer only before play starts
 export default handler({
   GET: async (req, res) => {
     requireAuth(req);
     const url = new URL(req.url, 'http://x');
-    const date = url.searchParams.get('date') || todayLocal();
-    if (!validDate(date)) throw new HttpError(400, 'Bad date');
-    const ev = await eventFor(date, false);
-    const rows = ev ? await db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`) : [];
-    const days = await db('chi_events?select=play_date&order=play_date.desc&limit=60');
-    send(res, 200, { date, today: todayLocal(), days: days.map((d) => d.play_date), sessions: rows.map(toSession) });
+    const ev = await resolveEvent(url.searchParams.get('event'));
+    const events = await listEvents();
+    if (!events.some((e) => e.id === ev.id)) events.unshift(ev);
+    const rows = await db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`);
+    send(res, 200, {
+      event: toEvent(ev),
+      latestId: events[0].id,
+      events: events.map(toEvent),
+      today: todayLocal(),
+      sessions: rows.map(toSession),
+    });
   },
 
   POST: async (req, res) => {
@@ -25,7 +32,7 @@ export default handler({
     const b = await readJson(req);
     const row = sessionFields(b, true);
     const token = /^[0-9a-f-]{36}$/i.test(b.clientToken || '') ? b.clientToken : null;
-    const ev = await eventFor(todayLocal(), true);
+    const ev = await resolveEvent(b.eventId);
     const made = await db('chi_sessions?on_conflict=client_token&select=' + SELECT, {
       method: 'POST',
       body: { ...row, event_id: ev.id, client_token: token },

@@ -451,3 +451,6 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 }
 #entry .key.on .suit { color: var(--pick-ink); }
 #entry .key.on .suit.red { color: #a3201a; }
+/* Session list: keep the date and time on one line on small phones */
+#sessPick { padding-right: 36px; }
+@media (max-width: 360px) { #sessPick { font-size: 1rem; padding-left: 10px; } }

@@ -33,10 +33,11 @@ const store = {
 };
 
 // ---------- state ----------
-const state = { data: null, viewDate: null, entry: null, admin: false };
+const state = { data: null, entry: null, admin: false };
+const curEventId = () => state.data?.event?.id;
 const mine = () => {
   const m = store.get('my');
-  return m && state.data && m.date === state.data.today ? m : null;
+  return m && state.data && m.eventId === curEventId() ? m : null;
 };
 const sessionById = (id) => state.data?.sessions.find((s) => s.id === id);
 const gameTitle = (s) => `${esc(pairLabel(s.nsP1, s.nsP2))} <span class="v">v</span> ${esc(pairLabel(s.ewP1, s.ewP2))}`;
@@ -62,9 +63,17 @@ async function api(path, opts = {}) {
   return body;
 }
 
-async function loadDay(date) {
-  const d = await api('sessions' + (date ? `?date=${date}` : ''));
-  if (!date || date === d.today) state.data = d;
+// Loads the chosen playing session (or the newest one). If the organiser has
+// started a newer session since this phone chose an older one, follow the newest.
+async function loadDay() {
+  const pick = store.get('event');
+  let d = await api('sessions' + (pick?.id ? `?event=${pick.id}` : ''));
+  if (pick) {
+    const latest = d.events.find((e) => e.id === d.latestId);
+    const stale = d.event.id !== pick.id || (latest && latest.id !== pick.id && Date.parse(latest.startedAt) > pick.pickedAt);
+    if (stale) { store.del('event'); if (d.event.id !== d.latestId) d = await api('sessions'); }
+  }
+  state.data = d;
   return d;
 }
 
@@ -181,11 +190,13 @@ function renderPlay() {
           <span class="rb-names"><span><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}</span><span><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</span></span>
           <span class="pill ${n === 4 ? 'done' : ''}">${n === 4 ? 'Finished' : `${n} of 4`}</span></button>`;
       }).join('')
-    : '<p class="muted">No tables have started yet today.</p>';
+    : '<p class="muted">No tables have started yet in this session.</p>';
   $app.innerHTML = shell('play', `
-    <header class="top"><h1>Play</h1><p class="muted">${fmtDate(state.data.today)}</p></header>
+    <header class="top"><h1>Play</h1>${sessionPicker()}</header>
     <a class="btn primary big block" href="#/new">Set up a new table</a>
-    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`);
+    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>
+    ${logoutButton()}`);
+  wireSessionPicker(); wireLogout();
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));
 }
 
@@ -196,7 +207,7 @@ function chooseSide(sessionId) {
       <button class="btn big ns" data-side="NS">North/South<br><span>${esc(pairLabel(s.nsP1, s.nsP2))}</span></button>
       <button class="btn big ew" data-side="EW">East/West<br><span>${esc(pairLabel(s.ewP1, s.ewP2))}</span></button>
     </div>`, (root) => root.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => {
-      store.set('my', { date: state.data.today, sessionId, side: b.dataset.side });
+      store.set('my', { eventId: curEventId(), sessionId, side: b.dataset.side });
       closeSheet(); go(`#/s/${sessionId}`);
     })));
 }
@@ -210,7 +221,7 @@ function renderNew(r) {
   const lastRaw = store.get('lastSession');
   // Continue numbering only if that table is still here today; after the
   // organiser clears the day, a log-out, or on a new day, start again at 1.
-  const last = lastRaw && lastRaw.date === state.data.today && sessionById(lastRaw.sessionId) ? lastRaw : null;
+  const last = lastRaw && lastRaw.eventId === curEventId() && sessionById(lastRaw.sessionId) ? lastRaw : null;
   const mySide = editing ? (mine()?.side || 'NS') : (lastRaw?.side || 'NS');
   const nameList = [...new Set(state.data.sessions.flatMap((s) => [s.nsP1, s.nsP2, s.ewP1, s.ewP2]).concat(prefs.names || []))];
   const played = editing && editing.deals.length > 0;
@@ -241,7 +252,7 @@ function renderNew(r) {
       <section class="card stack">
         <label class="lbl" for="sb">First board number</label>
         <div class="stepper"><button type="button" class="step" data-step="-1" aria-label="Lower" ${played ? 'disabled' : ''}>−</button>
-          <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" value="${v.startBoard}" ${played ? 'disabled' : ''}>
+          <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" min="1" max="999" maxlength="3" value="${v.startBoard}" ${played ? 'disabled' : ''}>
           <button type="button" class="step" data-step="1" aria-label="Higher" ${played ? 'disabled' : ''}>+</button></div>
         <p class="muted" id="boardsLine"></p>
         <span class="lbl">Who deals first?</span>
@@ -263,7 +274,13 @@ function renderNew(r) {
     document.getElementById('themLbl').textContent = `Opponents (${sideName(side === 'NS' ? 'EW' : 'NS')})`;
   };
   update();
-  sbInput.oninput = update;
+  // Board numbers start at 1: digits only, no 0, no leading zeros.
+  sbInput.oninput = () => {
+    const digits = sbInput.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 3);
+    if (sbInput.value !== digits) sbInput.value = digits || (sbInput.value.replace(/\D/g, '') ? '1' : '');
+    update();
+  };
+  sbInput.onblur = () => { if (!(parseInt(sbInput.value, 10) >= 1)) { sbInput.value = '1'; update(); } };
   f.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => { sbInput.value = Math.max(1, (parseInt(sbInput.value, 10) || 1) + Number(b.dataset.step)); update(); }));
   f.querySelectorAll('[data-dealer]').forEach((b) => (b.onclick = () => { dealer = b.dataset.dealer; radio(f, '[data-dealer]', b); }));
   f.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => { side = b.dataset.side; radio(f, '[data-side]', b); update(); }));
@@ -272,7 +289,7 @@ function renderNew(r) {
     ev.preventDefault();
     const fd = Object.fromEntries(new FormData(f));
     const body = {
-      startBoard: parseInt(editing && played ? editing.startBoard : sbInput.value, 10), firstDealer: dealer,
+      startBoard: Math.max(1, parseInt(editing && played ? editing.startBoard : sbInput.value, 10) || 1), firstDealer: dealer,
       nsP1: side === 'NS' ? fd.us1 : fd.them1, nsP2: side === 'NS' ? fd.us2 : fd.them2,
       ewP1: side === 'EW' ? fd.us1 : fd.them1, ewP2: side === 'EW' ? fd.us2 : fd.them2,
     };
@@ -280,10 +297,10 @@ function renderNew(r) {
     try {
       const out = editing
         ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body } })
-        : await api('sessions', { method: 'POST', body: { ...body, clientToken: token } });
+        : await api('sessions', { method: 'POST', body: { ...body, eventId: curEventId(), clientToken: token } });
       store.set('prefs', { names: [fd.us1, fd.us2] });
-      store.set('my', { date: state.data.today, sessionId: out.session.id, side });
-      store.set('lastSession', { startBoard: out.session.startBoard, side, sessionId: out.session.id, date: state.data.today });
+      store.set('my', { eventId: curEventId(), sessionId: out.session.id, side });
+      store.set('lastSession', { startBoard: out.session.startBoard, side, sessionId: out.session.id, eventId: curEventId() });
       upsertSession(out.session);
       toast(editing ? 'Names saved' : 'Table started');
       go(`#/s/${out.session.id}`);
@@ -321,7 +338,7 @@ function renderGame(r) {
     // The organiser may have deleted this game, or cleared the day.
     if (mine()?.sessionId === r.a) store.del('my');
     $app.innerHTML = shell('play', `<div class="card"><h2>This table is no longer here</h2>
-      <p>It may have been cleared by the organiser.</p><a class="btn primary big block" href="#/play">Go to the Play screen</a></div>`);
+      <p>The organiser may have started a new session or cleared the tables.</p><a class="btn primary big block" href="#/play">Go to the Play screen</a></div>`);
     return;
   }
   const m = mine();
@@ -375,10 +392,11 @@ function renderGame(r) {
       ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this table</button>' : ''}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
+      ${logoutButton()}
     </div>`);
 
   const startNew = () => {
-    store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, date: state.data.today });
+    store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, eventId: curEventId() });
     store.del('my');
     go('#/new');
   };
@@ -392,13 +410,14 @@ function renderGame(r) {
       root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
       root.querySelector('#leaveJoin').onclick = () => {
         closeSheet();
-        store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, date: state.data.today });
+        store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, eventId: curEventId() });
         store.del('my');
         go('#/play');   // the Play screen lists every table already started
       };
     });
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
+  wireLogout();
   $app.querySelectorAll('[data-vultog]').forEach((b) => (b.onclick = () => {
     const [n, k] = b.dataset.vultog.split(':');
     const cur = rows[Number(n) - 1].vul;
@@ -487,11 +506,9 @@ function renderEntry(r) {
     ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
     <div id="entry"></div>
     <section class="card"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
-    <button class="btn ghost block logout" id="logoutEntry">Log out</button>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   drawEntry();
   document.getElementById('saveBtn').onclick = () => saveEntry(draftKey);
-  document.getElementById('logoutEntry').onclick = () => confirmLogout(' This board hasn’t been saved unless you tapped Save result.');
 }
 
 function drawEntry() {
@@ -647,71 +664,78 @@ function playCard({ s, d, sc }, highlight = false) {
 // =============================================================
 //  Other results — every board played on a day
 // =============================================================
-async function ensureDate(dateArg, tab) {
-  const date = dateArg && /^\d{4}-\d{2}-\d{2}$/.test(dateArg) ? dateArg : state.data.today;
-  if (date === state.data.today) return state.data;
-  if (state.viewDate?.date === date) return state.viewDate;
-  $app.innerHTML = shell(tab, '<p class="muted center pad">Loading…</p>');
-  try { state.viewDate = await loadDay(date); } catch (e) { $app.innerHTML = shell(tab, errorBlock(e.message)); return null; }
-  return state.viewDate;
+// ---------- session picker (shown on Play, Other results and Day summary) ----------
+function fmtStart(e) {
+  const d = new Date(e.startedAt);
+  const day = d.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+  const time = d.toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' });
+  return `${day}, ${time}`;
 }
+function sessionPicker() {
+  const d = state.data;
+  return `<label class="lbl small" for="sessPick">Session (date and start time)</label>
+    <select id="sessPick" class="input">${d.events.map((e) => `<option value="${e.id}" ${e.id === d.event.id ? 'selected' : ''}>${esc(fmtStart(e))}${e.id === d.latestId ? ' – newest' : ''}</option>`).join('')}</select>`;
+}
+function wireSessionPicker() {
+  const el = document.getElementById('sessPick');
+  if (!el) return;
+  el.onchange = async () => {
+    if (el.value === state.data.latestId) store.del('event');
+    else store.set('event', { id: el.value, pickedAt: Date.now() });
+    state.data = null;
+    await render();
+  };
+}
+const logoutButton = () => '<button class="btn ghost block logout" id="logout">Log out</button>';
+const wireLogout = () => document.getElementById('logout')?.addEventListener('click', () => confirmLogout());
 
-function dayPicker(data) {
-  const days = [...new Set([data.today, ...data.days])].sort().reverse();
-  return `<label class="sr" for="dayPick">Day</label><select id="dayPick" class="input">${days.map((d) => `<option value="${d}" ${d === data.date ? 'selected' : ''}>${d === data.today ? 'Today' : fmtDate(d)}</option>`).join('')}</select>`;
-}
-function wireDayPicker(base) {
-  const el = document.getElementById('dayPick');
-  if (el) el.onchange = () => go(`#/${base}/${el.value}`);
-}
-
-async function renderOthers(r) {
-  const data = await ensureDate(r.a, 'others'); if (!data) return;
+async function renderOthers() {
+  const data = state.data;
   const boards = new Map();
   for (const s of data.sessions) for (const d of s.deals) boards.set(d.boardNum, (boards.get(d.boardNum) || 0) + 1);
   const m = mine();
-  const myBoards = new Set(m && data.date === state.data.today ? (sessionById(m.sessionId)?.deals || []).map((d) => d.boardNum) : []);
+  const myBoards = new Set(m ? (sessionById(m.sessionId)?.deals || []).map((d) => d.boardNum) : []);
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${dayPicker(data)}</header>
+    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
     <p class="muted">Tap a board to compare every table’s result for that board.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
-      : '<div class="card"><p class="muted">No boards recorded on this day yet.</p></div>'}`);
-  wireDayPicker('others');
+    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
+      : '<div class="card"><p class="muted">No boards recorded in this session yet.</p></div>'}
+    ${logoutButton()}`);
+  wireSessionPicker(); wireLogout();
 }
 
 async function renderBoard(r) {
-  const data = await ensureDate(r.b, 'others'); if (!data) return;
+  const data = state.data;
   const board = Number(r.a);
   const m = mine();
   const plays = playsOfBoard(board, data.sessions);
   plays.sort((a, b) => (b.s.id === m?.sessionId) - (a.s.id === m?.sessionId));
   $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/others/${data.date}" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${fmtDate(data.date)} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
+    <header class="top"><a href="#/others" class="back">‹ All boards</a><h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
     <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
 }
 
 // =============================================================
 //  Day summary
 // =============================================================
-async function renderDay(r) {
-  const data = await ensureDate(r.a, 'day'); if (!data) return;
+async function renderDay() {
+  const data = state.data;
   const rows = daySummary(data.sessions);
   const games = data.sessions.length;
   $app.innerHTML = shell('day', `
-    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${dayPicker(data)}</header>
-    <p class="muted">${games} table${games === 1 ? '' : 's'}. Pairs are ranked by the total points they won.</p>
-    ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}/${data.date}">
+    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
+    <p class="muted">${games} table${games === 1 ? '' : 's'} in this session. Pairs are ranked by the total points they won.</p>
+    ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}">
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}</strong>
           <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
           <span class="muted">Average ${x.avgPerBoard} a board</span></span>
         <span class="rv">${x.points}</span></a>`).join('')
-      : '<div class="card"><p class="muted">No results yet for this day.</p></div>'}
-    ${state.admin ? organiserPanel(data) : '<button class="btn ghost block logout" id="logout">Log out</button>'}`);
-  wireDayPicker('day');
+      : '<div class="card"><p class="muted">No results yet in this session.</p></div>'}
+    ${state.admin ? organiserPanel(data) : logoutButton()}`);
+  wireSessionPicker(); wireLogout();
   if (state.admin) wireOrganiser(data);
-  document.getElementById('logout')?.addEventListener('click', () => confirmLogout());
 }
 
 // ---------- organiser (super-user) tools: only on phones logged in with the organiser code ----------
@@ -720,12 +744,14 @@ function organiserPanel(data) {
   return `<section class="card organiser">
     <h2>Organiser</h2>
     <p class="muted">Only phones logged in with the organiser code see this.</p>
+    <button class="btn primary big block" id="newSession">Start a new session</button>
+    <p class="muted small">Showing the session started ${esc(fmtStart(data.event))}${data.event.id === data.latestId ? ' (the newest)' : ''}</p>
     ${games.length ? `<div class="stack">${games.map((g) => `<div class="org-row">
         <span><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong><br>
         <span class="muted">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></span>
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
-      <button class="btn danger big block" id="clearDay">Clear all ${games.length} table${games.length === 1 ? '' : 's'} on this day</button>`
-      : '<p class="muted">No tables on this day.</p>'}
+      <button class="btn danger big block" id="clearDay">Clear ${games.length === 1 ? 'the 1 table' : `all ${games.length} tables`} in this session</button>`
+      : '<p class="muted">No tables in this session.</p>'}
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
 }
@@ -733,11 +759,9 @@ function organiserPanel(data) {
 function wireOrganiser(data) {
   const after = async (msg) => {
     toast(msg);
-    state.viewDate = null;
     const m = mine();
     await loadDay();
     if (m && !sessionById(m.sessionId)) store.del('my');
-    if (data.date !== state.data.today) state.viewDate = await loadDay(data.date).catch(() => null);
     rerenderKeepScroll();
   };
   $app.querySelectorAll('[data-delgame]').forEach((b) => (b.onclick = () => {
@@ -755,16 +779,33 @@ function wireOrganiser(data) {
   }));
   document.getElementById('clearDay')?.addEventListener('click', () => {
     const n = data.sessions.length, boards = data.sessions.reduce((t, g) => t + g.deals.length, 0);
-    sheet(`<h2>Clear everything for ${data.date === state.data.today ? 'today' : esc(fmtDate(data.date))}?</h2>
+    sheet(`<h2>Clear every table in this session?</h2>
+      <p>${esc(fmtStart(data.event))}</p>
       <p>This deletes <strong>all ${n} table${n === 1 ? '' : 's'}</strong> and <strong>${boards} saved board${boards === 1 ? '' : 's'}</strong> for everyone, so you can start again. This can’t be undone.</p>
       <button class="btn danger big block" id="yes">Yes, clear everything</button>`, (root) => {
       root.querySelector('#yes').onclick = async () => {
         closeSheet();
-        try { const out = await api('admin', { method: 'POST', body: { action: 'clearDay', date: data.date } }); await after(`Cleared ${out.deletedGames} table${out.deletedGames === 1 ? '' : 's'}`); }
+        try { const out = await api('admin', { method: 'POST', body: { action: 'clearSession', eventId: data.event.id } }); await after(`Cleared ${out.deletedGames} table${out.deletedGames === 1 ? '' : 's'}`); }
         catch (e) { toast(e.message, 'error'); }
       };
     });
   });
+  document.getElementById('newSession').onclick = () => {
+    sheet(`<h2>Start a new session?</h2>
+      <p>Every phone moves to the new session and all tables start empty. Earlier sessions are kept and can still be chosen from the Session list.</p>
+      <button class="btn primary big block" id="yes">Yes, start a new session</button>`, (root) => {
+      root.querySelector('#yes').onclick = async () => {
+        closeSheet();
+        try {
+          await api('admin', { method: 'POST', body: { action: 'newSession' } });
+          store.del('event'); store.del('my'); store.del('lastSession');
+          state.data = null;
+          toast('New session started');
+          await render();
+        } catch (e) { toast(e.message, 'error'); }
+      };
+    });
+  };
   document.getElementById('leaveOrg').onclick = async () => {
     try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
     store.del('my'); store.del('lastSession');
@@ -774,7 +815,7 @@ function wireOrganiser(data) {
 }
 
 async function renderPair(r) {
-  const data = await ensureDate(r.b, 'day'); if (!data) return;
+  const data = state.data;
   const key = r.a;
   const row = daySummary(data.sessions).find((x) => x.key === key);
   const items = [];
@@ -794,7 +835,7 @@ async function renderPair(r) {
       }).join('')}</tbody></table></section>`);
   }
   $app.innerHTML = shell('day', `
-    <header class="top"><a href="#/day/${data.date}" class="back">‹ Day summary</a><h1>${esc(row?.label || 'Pair')}</h1>
+    <header class="top"><a href="#/day" class="back">‹ Day summary</a><h1>${esc(row?.label || 'Pair')}</h1>
     ${row ? `<p class="muted">Rank ${row.rank} · ${row.points} points · ${row.boards} boards</p>` : ''}</header>
     ${items.join('') || '<p class="muted">No boards found.</p>'}`);
 }
@@ -829,8 +870,7 @@ setInterval(async () => {
       const o = document.getElementById('others');
       if (s && o) o.innerHTML = othersOnBoard(boardNumberFor(Number(r.b), s.startBoard), s.id);
     } else {
-      const viewingOtherDay = (r.name === 'day' || r.name === 'others') ? (r.a && r.a !== state.data.today) : (r.b && r.b !== state.data.today);
-      if (!viewingOtherDay) { const y = window.scrollY; await render(); window.scrollTo(0, y); }
+      const y = window.scrollY; await render(); window.scrollTo(0, y);
     }
   } catch { /* offline — try again next time */ }
 }, 20000);

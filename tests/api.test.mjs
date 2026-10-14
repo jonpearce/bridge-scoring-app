@@ -196,7 +196,7 @@ test('board numbers and dealer are locked once play has started', async () => {
 });
 
 test('players cannot use organiser actions', async () => {
-  const r = await call(admin, 'POST', { action: 'clearDay', date: '2026-10-13' });
+  const r = await call(admin, 'POST', { action: 'clearSession', eventId: crypto.randomUUID() });
   assert.equal(r.status, 403);
 });
 
@@ -215,14 +215,41 @@ test('organiser can delete one game, and its boards go with it', async () => {
   assert.equal(T.chi_deals.filter((d) => d.session_id === sid).length, 0);
 });
 
-test('organiser can clear a whole day', async () => {
+test('organiser can start a new session: tables start empty, old session kept', async () => {
+  const before = await call(sessions, 'GET');
+  const oldId = before.body.event.id;
+  assert.ok(before.body.sessions.length >= 1);
+  const r = await call(admin, 'POST', { action: 'newSession' });
+  assert.equal(r.status, 201);
+  const now = await call(sessions, 'GET');
+  assert.equal(now.body.event.id, r.body.event.id);       // phones follow the newest session
+  assert.equal(now.body.sessions.length, 0);              // all tables start empty
+  assert.equal(now.body.events.length, 2);                // both sessions offered in the list
+  const old = await call(sessions, 'GET', null, `?event=${oldId}`);
+  assert.equal(old.body.event.id, oldId);                 // earlier session can still be chosen
+  assert.ok(old.body.sessions.length >= 1);
+  // a table can be set up in the chosen (older) session
+  const t = await call(sessions, 'POST', { ...newTable, eventId: oldId, clientToken: crypto.randomUUID() });
+  assert.equal(t.status, 201);
+  assert.equal((await call(sessions, 'GET', null, `?event=${oldId}`)).body.sessions.length, old.body.sessions.length + 1);
+  // with no session chosen, a new table goes into the newest session
+  await call(sessions, 'POST', { ...newTable, clientToken: crypto.randomUUID() });
+  assert.equal((await call(sessions, 'GET')).body.sessions.length, 1);
+});
+
+test('organiser can clear every table in a session', async () => {
   const day = await call(sessions, 'GET');
-  assert.ok(day.body.sessions.length >= 1);
-  const r = await call(admin, 'POST', { action: 'clearDay', date: day.body.date });
+  const r = await call(admin, 'POST', { action: 'clearSession', eventId: day.body.event.id });
   assert.equal(r.status, 200);
   assert.equal((await call(sessions, 'GET')).body.sessions.length, 0);
-  assert.equal(T.chi_events.length, 0);
-  assert.equal(T.chi_deals.length, 0);
+  assert.equal(T.chi_events.length, 2);                   // the sessions themselves remain
+});
+
+test('players cannot start or clear sessions', async () => {
+  const code = cookie; cookie = '';
+  await call(login, 'POST', { code: 'golf' });
+  assert.equal((await call(admin, 'POST', { action: 'newSession' })).status, 403);
+  cookie = code;
 });
 
 test('leaving organiser mode logs the phone out', async () => {

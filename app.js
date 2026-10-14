@@ -111,7 +111,13 @@ async function render() {
     state.scrollToNext = false;
     const target = document.querySelector('.board.next') || document.querySelector('.totals');
     if (target) {
-      const want = target.getBoundingClientRect().top + window.scrollY - 12;
+      // Put the next board in the middle of the visible area (above the bottom tab bar).
+      // If it is too tall to fit, show its top edge just below the top of the screen.
+      const rect = target.getBoundingClientRect();
+      const tabs = document.querySelector('nav.tabs')?.getBoundingClientRect().height || 0;
+      const visible = window.innerHeight - tabs;
+      const gap = Math.max(12, (visible - rect.height) / 2);
+      const want = rect.top + window.scrollY - gap;
       const max = document.documentElement.scrollHeight - window.innerHeight;
       if (want > max) { const m = document.querySelector('main.screen'); if (m) m.style.paddingBottom = `calc(${getComputedStyle(m).paddingBottom} + ${Math.ceil(want - max)}px)`; }
       window.scrollTo(0, Math.max(0, want));

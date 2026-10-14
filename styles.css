@@ -434,3 +434,8 @@ h2 { font-size: 1.25rem; font-weight: 700; }
 }
 /* Board panel: Contract and Lead on the left, Result (tricks + outcome) on the right */
 .facts .res { grid-column: 2; grid-row: 1 / span 2; }
+
+/* Stop iPhone double-tap zoom on buttons (pinch-zoom still works) */
+button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action: manipulation; }
+/* "Board" label on Other results tiles */
+.bcell .blbl { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }

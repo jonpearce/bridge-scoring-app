@@ -98,6 +98,16 @@ async function render() {
   const screens = { play: renderPlay, new: renderNew, edit: renderNew, s: renderGame, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
   await (screens[r.name] || renderPlay)(r);
   window.scrollTo(0, 0);
+  if (state.scrollToNext && r.name === 's') {
+    state.scrollToNext = false;
+    const target = document.querySelector('.board.next') || document.querySelector('.totals');
+    if (target) {
+      const want = target.getBoundingClientRect().top + window.scrollY - 12;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      if (want > max) { const m = document.querySelector('main.screen'); if (m) m.style.paddingBottom = `calc(${getComputedStyle(m).paddingBottom} + ${Math.ceil(want - max)}px)`; }
+      window.scrollTo(0, Math.max(0, want));
+    }
+  }
 }
 
 function shell(tab, inner) {
@@ -175,10 +185,8 @@ function renderPlay() {
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1><p class="muted">${fmtDate(state.data.today)}</p></header>
     <a class="btn primary big block" href="#/new">Set up a new table</a>
-    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>
-    <button class="btn ghost block logout" id="logoutPlay">Log out</button>`);
+    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`);
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));
-  document.getElementById('logoutPlay').onclick = () => confirmLogout();
 }
 
 function chooseSide(sessionId) {
@@ -367,7 +375,6 @@ function renderGame(r) {
       ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this table</button>' : ''}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
-      <button class="btn ghost block logout" id="logoutPlay">Log out</button>
     </div>`);
 
   const startNew = () => {
@@ -380,12 +387,18 @@ function renderGame(r) {
     // In-app question (pop-up dialogs are blocked in some browsers)
     sheet(`<h2>Leave this table?</h2>
       <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this table from the Play screen.</p>
-      <button class="btn primary big block" id="leaveYes">Yes, set up a new table</button>`, (root) => {
+      <button class="btn primary big block" id="leaveYes">Set up a new table</button>
+      <button class="btn big block" id="leaveJoin">Join a different table</button>`, (root) => {
       root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
+      root.querySelector('#leaveJoin').onclick = () => {
+        closeSheet();
+        store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, date: state.data.today });
+        store.del('my');
+        go('#/play');   // the Play screen lists every table already started
+      };
     });
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
-  document.getElementById('logoutPlay').onclick = () => confirmLogout();
   $app.querySelectorAll('[data-vultog]').forEach((b) => (b.onclick = () => {
     const [n, k] = b.dataset.vultog.split(':');
     const cur = rows[Number(n) - 1].vul;
@@ -585,6 +598,7 @@ async function saveEntry(draftKey) {
     store.del(draftKey);
     const sc = scoreDeal(out.deal, s.firstDealer);
     toast(`Saved · Board ${out.deal.boardNum} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
+    state.scrollToNext = true;
     go(`#/s/${sessionId}`);
     loadDay().catch(() => {});
   } catch (e) {
@@ -661,7 +675,7 @@ async function renderOthers(r) {
   $app.innerHTML = shell('others', `
     <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${dayPicker(data)}</header>
     <p class="muted">Tap a board to compare every table’s result for that board.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
+    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}/${data.date}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded on this day yet.</p></div>'}`);
   wireDayPicker('others');
 }

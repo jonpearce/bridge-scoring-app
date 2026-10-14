@@ -62,10 +62,11 @@ recalculated.
    boards are in, tap **All 4 boards done: set up a new table**. The next first
    board is suggested automatically (it goes back to board 1 after the organiser
    clears the day, after logging out, or on a new day). To stop part-way, use **Leave this table**
-   at the bottom; boards already saved are kept. Each new day starts fresh on
+   at the bottom, then choose **Set up a new table** or **Join a different table**;
+   boards already saved are kept. Each new day starts fresh on
    its own.
 
-8. **Log out:** at the bottom of the Play screen, the results screen or **Day summary**, tap **Log out** (for
+8. **Log out:** at the bottom of the results screen or **Day summary**, tap **Log out** (for
    example to log back in with the organiser code).
 9. **Organiser (super-user):** log in with the organiser code instead of the
    players' code. On **Day summary**, an *Organiser* section lists every table

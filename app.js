@@ -190,11 +190,14 @@ function renderPlay() {
           <span class="rb-names"><span><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}</span><span><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</span></span>
           <span class="pill ${n === 4 ? 'done' : ''}">${n === 4 ? 'Finished' : `${n} of 4`}</span></button>`;
       }).join('')
-    : '<p class="muted">No tables have started yet in this session.</p>';
+    : '';
+  const joinCard = games.length
+    ? `<section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`
+    : '<section class="card"><p class="muted">No tables have started yet in this session.</p></section>';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1>${sessionPicker()}</header>
     <a class="btn primary big block" href="#/new">Set up a new table</a>
-    <section class="card"><h2>Join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>
+    ${joinCard}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));

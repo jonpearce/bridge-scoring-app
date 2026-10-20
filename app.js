@@ -251,7 +251,9 @@ function renderNew(r) {
   // organiser clears the day, a log-out, or on a new day, start again at 1.
   const last = lastRaw && lastRaw.eventId === curEventId() && sessionById(lastRaw.sessionId) ? lastRaw : null;
   const mySide = editing ? (mine()?.side || 'NS') : (lastRaw?.side || 'NS');
-  const nameList = [...new Set(state.data.sessions.flatMap((s) => [s.nsP1, s.nsP2, s.ewP1, s.ewP2]).concat(prefs.names || []))];
+  // Every name entered on any day (from the server), plus today's and this phone's own.
+  const nameList = uniqNames([...(prefs.names || []), ...(state.data.names || []),
+    ...state.data.sessions.flatMap((s) => [s.nsP1, s.nsP2, s.ewP1, s.ewP2])]);
   const played = editing && editing.deals.length > 0;
   const v = editing
     ? { startBoard: editing.startBoard, firstDealer: editing.firstDealer,
@@ -270,12 +272,11 @@ function renderNew(r) {
           <button type="button" role="radio" data-side="EW" class="ew ${mySide === 'EW' ? 'on' : ''}" aria-checked="${mySide === 'EW'}">East/West</button>
         </div>
         <label class="lbl" id="usLbl">Your pair</label>
-        <input name="us1" class="input" placeholder="Player 1" value="${esc(v.us1)}" list="names" required maxlength="40" aria-labelledby="usLbl">
-        <input name="us2" class="input" placeholder="Player 2" value="${esc(v.us2)}" list="names" required maxlength="40" aria-labelledby="usLbl">
+        <div class="ac"><input name="us1" class="input" placeholder="Player 1" value="${esc(v.us1)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="usLbl"></div>
+        <div class="ac"><input name="us2" class="input" placeholder="Player 2" value="${esc(v.us2)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="usLbl"></div>
         <label class="lbl" id="themLbl">Opponents</label>
-        <input name="them1" class="input" placeholder="Player 1" value="${esc(v.them1)}" list="names" required maxlength="40" aria-labelledby="themLbl">
-        <input name="them2" class="input" placeholder="Player 2" value="${esc(v.them2)}" list="names" required maxlength="40" aria-labelledby="themLbl">
-        <datalist id="names">${nameList.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
+        <div class="ac"><input name="them1" class="input" placeholder="Player 1" value="${esc(v.them1)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="themLbl"></div>
+        <div class="ac"><input name="them2" class="input" placeholder="Player 2" value="${esc(v.them2)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="themLbl"></div>
       </section>
       <section class="card stack">
         <label class="lbl" for="sb">First board number</label>
@@ -312,6 +313,7 @@ function renderNew(r) {
   f.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => { sbInput.value = Math.max(1, (parseInt(sbInput.value, 10) || 1) + Number(b.dataset.step)); update(); }));
   f.querySelectorAll('[data-dealer]').forEach((b) => (b.onclick = () => { dealer = b.dataset.dealer; radio(f, '[data-dealer]', b); }));
   f.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => { side = b.dataset.side; radio(f, '[data-side]', b); update(); }));
+  nameSuggest(f, ['us1', 'us2', 'them1', 'them2'], nameList);
 
   f.onsubmit = async (ev) => {
     ev.preventDefault();
@@ -337,6 +339,78 @@ function renderNew(r) {
       btn.disabled = false;
     }
   };
+}
+
+// One entry per name ignoring capitals and spaces, keeping the first spelling seen.
+function uniqNames(list) {
+  const seen = new Map();
+  for (const raw of list) {
+    const n = String(raw ?? '').trim().replace(/\s+/g, ' ');
+    if (n && !seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n);
+  }
+  return [...seen.values()];
+}
+
+// Name suggestions under each box. Works the same on phones and computers
+// (phones ignore or hide the browser's own <datalist> list).
+// Empty box → every known name; typing → names with a word starting with
+// what's typed first, then names containing it. Names already in another
+// box are left out. Tap a name to fill the box and move to the next one.
+function nameSuggest(form, fields, names) {
+  const inputs = fields.map((n) => form.elements[n]);
+  inputs.forEach((inp, i) => {
+    const wrap = inp.parentElement;
+    const list = document.createElement('ul');
+    list.className = 'ac-list'; list.id = `ac-${inp.name}`; list.setAttribute('role', 'listbox'); list.hidden = true;
+    wrap.appendChild(list);
+    inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list');
+    inp.setAttribute('aria-controls', list.id); inp.setAttribute('aria-expanded', 'false');
+    let active = -1, shown = [];
+
+    const close = () => { list.hidden = true; inp.setAttribute('aria-expanded', 'false'); active = -1; };
+    const highlight = () => list.querySelectorAll('li').forEach((li, k) => {
+      li.classList.toggle('on', k === active); li.setAttribute('aria-selected', k === active);
+      if (k === active) li.scrollIntoView({ block: 'nearest' });
+    });
+    const open = () => {
+      const q = inp.value.trim().toLowerCase();
+      const taken = new Set(inputs.filter((o) => o !== inp).map((o) => o.value.trim().toLowerCase()).filter(Boolean));
+      const free = names.filter((n) => !taken.has(n.toLowerCase()));
+      shown = !q ? free : [
+        ...free.filter((n) => n.toLowerCase().split(' ').some((w) => w.startsWith(q))),
+        ...free.filter((n) => n.toLowerCase().includes(q) && !n.toLowerCase().split(' ').some((w) => w.startsWith(q))),
+      ];
+      if (shown.length === 1 && shown[0].toLowerCase() === q) shown = [];
+      if (!shown.length) return close();
+      list.innerHTML = shown.map((n, k) => `<li role="option" id="${list.id}-${k}" data-k="${k}">${esc(n)}</li>`).join('');
+      active = -1; list.hidden = false; inp.setAttribute('aria-expanded', 'true');
+    };
+    const pick = (k) => {
+      inp.value = shown[k]; close();
+      const next = inputs.slice(i + 1).find((o) => !o.value.trim());
+      if (next) next.focus(); else inp.blur();
+    };
+
+    inp.addEventListener('focus', () => {
+      open();
+      // On phones, lift the box up so the list isn't hidden behind the keyboard.
+      if (window.matchMedia('(max-width: 700px)').matches) setTimeout(() => inp.scrollIntoView({ block: 'start', behavior: 'smooth' }), 250);
+    });
+    inp.addEventListener('input', open);
+    inp.addEventListener('blur', () => setTimeout(close, 150));
+    inp.addEventListener('keydown', (e) => {
+      if (list.hidden) { if (e.key === 'ArrowDown') { open(); e.preventDefault(); } return; }
+      if (e.key === 'ArrowDown') { active = Math.min(shown.length - 1, active + 1); highlight(); e.preventDefault(); }
+      else if (e.key === 'ArrowUp') { active = Math.max(0, active - 1); highlight(); e.preventDefault(); }
+      else if (e.key === 'Enter' && active >= 0) { pick(active); e.preventDefault(); }
+      else if (e.key === 'Escape') close();
+    });
+    // pointerdown + preventDefault keeps the box focused (and the keyboard up) while tapping.
+    list.addEventListener('pointerdown', (e) => {
+      const li = e.target.closest('li'); if (!li) return;
+      e.preventDefault(); pick(Number(li.dataset.k));
+    });
+  });
 }
 
 function radio(root, sel, on) {

@@ -17,13 +17,17 @@ export default handler({
     const ev = await resolveEvent(url.searchParams.get('event'));
     const events = await listEvents();
     if (!events.some((e) => e.id === ev.id)) events.unshift(ev);
-    const rows = await db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`);
+    const [rows, past] = await Promise.all([
+      db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`),
+      db('chi_sessions?select=ns_p1,ns_p2,ew_p1,ew_p2&order=created_at.desc&limit=2000'),
+    ]);
     send(res, 200, {
       event: toEvent(ev),
       latestId: events[0].id,
       events: events.map(toEvent),
       today: todayLocal(),
       sessions: rows.map(toSession),
+      names: allNames(past),
     });
   },
 
@@ -59,6 +63,17 @@ export default handler({
     send(res, 200, { session: toSession(upd[0]) });
   },
 });
+
+// Every player name ever entered (any day), most recently used first, one
+// entry per name ignoring capitals — used to suggest names on the set-up screen.
+export function allNames(rows) {
+  const seen = new Map();
+  for (const r of rows) for (const n of [r.ns_p1, r.ns_p2, r.ew_p1, r.ew_p2]) {
+    const name = cleanName(n);
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+  }
+  return [...seen.values()];
+}
 
 function sessionFields(b, strict) {
   const row = {

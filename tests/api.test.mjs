@@ -224,6 +224,7 @@ test('organiser can start a new session: tables start empty, old session kept', 
   const now = await call(sessions, 'GET');
   assert.equal(now.body.event.id, r.body.event.id);       // phones follow the newest session
   assert.equal(now.body.sessions.length, 0);              // all tables start empty
+  assert.ok(now.body.names.includes('Cath') && now.body.names.includes('Fay')); // earlier names still suggested
   assert.equal(now.body.events.length, 2);                // both sessions offered in the list
   const old = await call(sessions, 'GET', null, `?event=${oldId}`);
   assert.equal(old.body.event.id, oldId);                 // earlier session can still be chosen
@@ -255,4 +256,12 @@ test('players cannot start or clear sessions', async () => {
 test('leaving organiser mode logs the phone out', async () => {
   await call(login, 'DELETE');
   assert.equal((await call(login, 'GET')).body.ok, false);
+});
+
+test('name suggestions: most recent first, one per name ignoring capitals', async () => {
+  const { allNames } = await import('../api/sessions.js');
+  assert.deepEqual(allNames([
+    { ns_p1: 'Ann', ns_p2: 'bob', ew_p1: 'Cath', ew_p2: '' },
+    { ns_p1: 'ann', ns_p2: 'Bob', ew_p1: ' Dave ', ew_p2: null },
+  ]), ['Ann', 'bob', 'Cath', 'Dave']);
 });

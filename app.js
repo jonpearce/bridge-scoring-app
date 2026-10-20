@@ -884,7 +884,7 @@ function organiserPanel(data) {
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
       <button class="btn danger big block" id="clearDay">Clear ${games.length === 1 ? 'the 1 table' : `all ${games.length} tables`} in this session</button>`
       : '<p class="muted">No tables in this session.</p>'}
-    <button class="btn ghost block" id="manageNames">Player names suggested when setting up a table…</button>
+    <button class="btn ghost block" id="manageNames">Removing player names…</button>
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
 }

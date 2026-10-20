@@ -506,3 +506,9 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .done-note { margin: 4px 0 -4px; font-weight: 700; color: var(--pos); text-align: center; }
 .btn-sub { display: block; font-size: .9rem; font-weight: 600; opacity: .85; white-space: nowrap; }
 .note.saved { background: #e6f2ea; border-color: #b9d8c4; color: var(--pos); font-weight: 700; }
+
+/* Edit names: add a name */
+.add-name { display: grid; gap: 6px; padding: 4px 0 8px; }
+.add-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.add-row .btn { min-width: 84px; flex-direction: row; white-space: nowrap; }
+.err.small:empty { display: none; }

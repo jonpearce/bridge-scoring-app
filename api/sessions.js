@@ -17,12 +17,13 @@ export default handler({
     const ev = await resolveEvent(url.searchParams.get('event'));
     const events = await listEvents();
     if (!events.some((e) => e.id === ev.id)) events.unshift(ev);
-    const [rows, past, hidden] = await Promise.all([
+    const [rows, past, hidden, added] = await Promise.all([
       db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`),
       db('chi_sessions?select=ns_p1,ns_p2,ew_p1,ew_p2,created_at&order=created_at.desc&limit=2000'),
       db('chi_hidden_names?select=name_key,name,hidden_at&order=name.asc'),
+      db('chi_added_names?select=name_key,name,added_at'),
     ]);
-    const names = nameLists(past, hidden);
+    const names = nameLists(past, hidden, added);
     send(res, 200, {
       event: toEvent(ev),
       latestId: events[0].id,
@@ -84,12 +85,19 @@ function lastUse(rows) {
 
 // Splits names into those suggested and those the organiser removed.
 // A removed name returns if a game created after its removal uses it.
-export function nameLists(rows, hiddenRows) {
+export function nameLists(rows, hiddenRows, addedRows = []) {
   const used = lastUse(rows);
+  // Names added by hand on the Edit names page count as used when they were added.
+  for (const a of addedRows) {
+    const cur = used.get(a.name_key);
+    if (!cur) used.set(a.name_key, { name: a.name, at: a.added_at });
+    else if (String(a.added_at) > String(cur.at)) cur.at = a.added_at;
+  }
   const hid = new Map(hiddenRows.map((h) => [h.name_key, h]));
   const stillHidden = (key) => hid.has(key) && !(String(used.get(key)?.at || '') > String(hid.get(key).hidden_at));
   return {
-    shown: [...used.entries()].filter(([k]) => !stillHidden(k)).map(([, x]) => x.name),
+    shown: [...used.entries()].filter(([k]) => !stillHidden(k))
+      .sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).map(([, x]) => x.name),
     hidden: hiddenRows.filter((h) => stillHidden(h.name_key)).map((h) => h.name),
   };
 }

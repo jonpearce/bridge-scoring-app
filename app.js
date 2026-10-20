@@ -956,7 +956,7 @@ function organiserPanel(data) {
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
       <button class="btn danger big block" id="clearDay">Clear ${games.length === 1 ? 'the 1 table' : `all ${games.length} tables`} in this session</button>`
       : '<p class="muted">No tables in this session.</p>'}
-    <button class="btn ghost block" id="manageNames">Removing player names…</button>
+    <button class="btn ghost block" id="manageNames">Edit names…</button>
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
 }
@@ -966,8 +966,14 @@ function organiserPanel(data) {
 function namesSheet() {
   const shown = state.data.names || [], hidden = state.data.hiddenNames || [];
   const sorted = [...shown].sort((a, b) => a.localeCompare(b));
-  sheet(`<div class="sheet-head"><h2>Player names</h2><button class="btn primary" id="namesTop">Done</button></div>
-    <p class="muted">These are suggested when setting up a table. Removing a name doesn’t change any results. If a removed name is used in a new game, it’s suggested again.</p>
+  sheet(`<div class="sheet-head"><h2>Edit names</h2><button class="btn primary" id="namesTop">Done</button></div>
+    <p class="muted">These names are suggested when setting up a table. Adding or removing a name doesn’t change any results. If a removed name is used in a new game, it’s suggested again.</p>
+    <form id="addNameForm" class="add-name" autocomplete="off">
+      <label class="lbl" for="newName">Add a name</label>
+      <div class="add-row"><input id="newName" class="input" maxlength="40" autocapitalize="words" placeholder="First name and surname" enterkeyhint="done">
+        <button class="btn primary" id="addBtn" type="submit">Add</button></div>
+      <p class="err small" id="addErr" role="alert"></p>
+    </form>
     ${sorted.length ? `<div class="name-rows">${sorted.map((n) => `<div class="org-row"><span><strong>${esc(n)}</strong></span>
       <button class="btn danger small-btn" data-hide="${esc(n)}">Remove</button></div>`).join('')}</div>`
       : '<p class="muted">No names yet.</p>'}
@@ -1000,6 +1006,31 @@ function namesSheet() {
       } catch (e) {
         toast(e.message, 'error');
         namesSheet();
+      }
+    };
+    const f = root.querySelector('#addNameForm'), inp = root.querySelector('#newName'), err = root.querySelector('#addErr');
+    inp.oninput = () => { err.textContent = ''; };
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const name = inp.value.trim().replace(/\s+/g, ' ');
+      if (!name) { err.textContent = 'Please type a name.'; return; }
+      const key = name.toLowerCase();
+      const d = state.data;
+      if ((d.names || []).some((n) => n.toLowerCase() === key)) { err.textContent = `${name} is already in the list.`; return; }
+      const btn = root.querySelector('#addBtn');
+      root.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      btn.innerHTML = '<span class="spin" aria-hidden="true"></span>Adding…';
+      try {
+        await api('admin', { method: 'POST', body: { action: 'addName', name } });
+        d.hiddenNames = (d.hiddenNames || []).filter((n) => n.toLowerCase() !== key);
+        d.names = [name, ...(d.names || [])];
+        namesSheet();
+        toast(`Added ${name}`);
+        document.getElementById('newName')?.focus();
+      } catch (e) {
+        root.querySelectorAll('button').forEach((x) => (x.disabled = false));
+        btn.textContent = 'Add';
+        err.textContent = e.message;
       }
     };
     root.querySelectorAll('[data-hide]').forEach((b) => (b.onclick = () => act(b, 'hideName', b.dataset.hide)));

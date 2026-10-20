@@ -9,10 +9,10 @@ process.env.SUPABASE_URL = 'https://fake.supabase.test';
 process.env.ADMIN_CODE = 'Boss';
 
 // ---------- fake PostgREST ----------
-const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [] };
+const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [], chi_added_names: [] };
 let clock = Date.parse('2026-10-12T10:00:00Z');
 const now = () => new Date((clock += 1000)).toISOString();
-const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'] };
+const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'], chi_added_names: ['name_key'] };
 
 function parse(url) {
   const u = new URL(url);
@@ -292,4 +292,21 @@ test('organiser can remove a name from suggestions and put it back', async () =>
   await call(login, 'POST', { code: 'golf' });
   assert.equal((await call(admin, 'POST', { action: 'hideName', name: 'Cath' })).status, 403);
   assert.equal((await call(sessions, 'GET')).body.hiddenNames, undefined);
+});
+
+test('organiser can add a name; removing it hides it; putting back keeps it', async () => {
+  await call(login, 'POST', { code: 'Boss' });
+  const r = await call(admin, 'POST', { action: 'addName', name: '  Zoe   Brown ' });
+  assert.equal(r.status, 200);
+  let g = (await call(sessions, 'GET')).body;
+  assert.equal(g.names[0], 'Zoe Brown');                   // newest first
+  await call(admin, 'POST', { action: 'hideName', name: 'Zoe Brown' });
+  g = (await call(sessions, 'GET')).body;
+  assert.ok(!g.names.includes('Zoe Brown') && g.hiddenNames.includes('Zoe Brown'));
+  await call(admin, 'POST', { action: 'unhideName', name: 'Zoe Brown' });
+  g = (await call(sessions, 'GET')).body;
+  assert.ok(g.names.includes('Zoe Brown') && !g.hiddenNames.includes('Zoe Brown'));
+  assert.equal((await call(admin, 'POST', { action: 'addName', name: '   ' })).status, 400);
+  await call(login, 'POST', { code: 'golf' });
+  assert.equal((await call(admin, 'POST', { action: 'addName', name: 'Sneaky' })).status, 403);
 });

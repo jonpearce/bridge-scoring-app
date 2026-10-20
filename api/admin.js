@@ -6,6 +6,7 @@ import { handler, send, readJson, requireAdmin, db, HttpError, getEvent, createE
 // POST /api/admin { action: 'clearSession', eventId } → deletes every table (and board) in that session
 // POST /api/admin { action: 'hideName', name }        → removes a name from the name suggestions
 // POST /api/admin { action: 'unhideName', name }      → puts it back
+// POST /api/admin { action: 'addName', name }         → adds a name to the suggestions
 const UUID = /^[0-9a-f-]{36}$/i;
 
 export default handler({
@@ -33,15 +34,20 @@ export default handler({
       return send(res, 200, { deletedGames: gone.length });
     }
 
-    if (b.action === 'hideName' || b.action === 'unhideName') {
+    if (b.action === 'hideName' || b.action === 'unhideName' || b.action === 'addName') {
       const name = cleanName(b.name);
-      if (!name) throw new HttpError(400, 'Missing name');
-      const key = encodeURIComponent(name.toLowerCase());
+      if (!name) throw new HttpError(400, 'Please type a name.');
+      const k = name.toLowerCase(), key = encodeURIComponent(k);
+      const now = new Date().toISOString();
       await db(`chi_hidden_names?name_key=eq.${key}`, { method: 'DELETE' });
+      await db(`chi_added_names?name_key=eq.${key}`, { method: 'DELETE' });
       if (b.action === 'hideName') {
-        await db('chi_hidden_names', { method: 'POST', body: { name_key: name.toLowerCase(), name, hidden_at: new Date().toISOString() } });
+        await db('chi_hidden_names', { method: 'POST', body: { name_key: k, name, hidden_at: now } });
+      } else {
+        // Added or put back: keep it in the list even if no table uses it.
+        await db('chi_added_names', { method: 'POST', body: { name_key: k, name, added_at: now } });
       }
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true, name });
     }
 
     throw new HttpError(400, 'Unknown action');

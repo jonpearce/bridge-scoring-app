@@ -505,3 +505,4 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 /* Table finished */
 .done-note { margin: 4px 0 -4px; font-weight: 700; color: var(--pos); text-align: center; }
 .btn-sub { display: block; font-size: .9rem; font-weight: 600; opacity: .85; white-space: nowrap; }
+.note.saved { background: #e6f2ea; border-color: #b9d8c4; color: var(--pos); font-weight: 700; }

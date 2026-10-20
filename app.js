@@ -393,8 +393,17 @@ function nameSuggest(form, fields, names) {
 
     inp.addEventListener('focus', () => {
       open();
-      // On phones, lift the box up so the list isn't hidden behind the keyboard.
-      if (window.matchMedia('(max-width: 700px)').matches) setTimeout(() => inp.scrollIntoView({ block: 'start', behavior: 'smooth' }), 250);
+      // On phones, once the keyboard is up, nudge the page only as far as needed
+      // to show a few suggestions — never so far that the box leaves the screen.
+      setTimeout(() => {
+        const vv = window.visualViewport; if (!vv || document.activeElement !== inp) return;
+        const r = inp.getBoundingClientRect();
+        const room = vv.height - r.bottom;                 // space under the box, above the keyboard
+        const need = Math.min(180, list.scrollHeight || 0);
+        if (room >= need) return;
+        const lift = Math.min(need - room, r.top - 16);    // keep the box at least 16px from the top
+        if (lift > 0) window.scrollBy({ top: lift, behavior: 'smooth' });
+      }, 350);
     });
     inp.addEventListener('input', open);
     inp.addEventListener('blur', () => setTimeout(close, 150));
@@ -623,7 +632,9 @@ function renderEntry(r) {
     vulNs: vulForDeal(existing, s.firstDealer).ns, vulEw: vulForDeal(existing, s.firstDealer).ew,
   } : null;
   const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
-  state.entry = { sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
+  const justSaved = !!existing && state.justSaved === `${s.id}:${n}`;
+  state.justSaved = null;
+  state.entry = { justSaved, sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
   const board = boardNumberFor(n, s.startBoard);
   // Link to the previous board's results at every table (greyed out if nobody has entered it yet).
   const prev = board - 1;
@@ -634,12 +645,29 @@ function renderEntry(r) {
       <div class="entry-toprow"><a href="#/s/${s.id}" class="back">‹ Back to the table</a>${prevLink}</div>
       <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
     </header>
-    ${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
+    ${justSaved ? '<p class="note saved">Saved ✓ How the other tables did is shown below.</p>'
+      : existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
     <div id="entry"></div>
-    <section class="card"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
+    <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
+  state.entry.draftKey = draftKey;
   drawEntry();
-  document.getElementById('saveBtn').onclick = () => saveEntry(draftKey);
+  if (justSaved) {
+    // Bring the other tables' results into view, below the header.
+    requestAnimationFrame(() => {
+      const c = document.getElementById('othersCard');
+      if (c) window.scrollTo({ top: c.getBoundingClientRect().top + window.scrollY - 12, behavior: 'smooth' });
+    });
+  }
+}
+
+// After a save the bottom button moves on: the next board still to enter, or the table.
+function nextAfterSave() {
+  const s = sessionById(state.entry.sessionId);
+  const nxt = [1, 2, 3, 4].find((k) => !s.deals.some((d) => d.dealNo === k));
+  return nxt
+    ? { label: `Next: Board ${boardNumberFor(nxt, s.startBoard)} ›`, go: () => go(`#/deal/${s.id}/${nxt}`) }
+    : { label: 'Back to the table ›', go: () => { state.scrollToNext = true; go(`#/s/${s.id}`); } };
 }
 
 function drawEntry() {
@@ -710,6 +738,10 @@ function onEntryTap(ev) {
   else if (d.act === 'unpass') e.passedOut = false;
   else return;
   store.set(`draft:${state.entry.sessionId}:${state.entry.n}`, e);
+  if (state.entry.justSaved) {
+    state.entry.justSaved = false;
+    document.querySelector('.note.saved')?.replaceWith(Object.assign(document.createElement('p'), { className: 'note', textContent: 'Already saved. Tap Save to correct it.' }));
+  }
   drawEntry();
 }
 
@@ -726,6 +758,12 @@ function drawPreview(s) {
   const p = document.getElementById('preview');
   const miss = missingFor(d);
   const saveBtn = document.getElementById('saveBtn');
+  if (state.entry.justSaved) {
+    const nx = nextAfterSave();
+    saveBtn.textContent = nx.label; saveBtn.disabled = false; saveBtn.onclick = nx.go;
+  } else {
+    saveBtn.textContent = 'Save result'; saveBtn.onclick = () => saveEntry(state.entry.draftKey);
+  }
   if (miss) { p.innerHTML = `<span class="muted">${miss}</span>`; saveBtn.disabled = true; return; }
   const sc = scoreDeal(d, s.firstDealer);
   p.innerHTML = d.passedOut ? '<strong>Passed out · no score</strong>'
@@ -746,9 +784,14 @@ async function saveEntry(draftKey) {
     store.del(draftKey);
     const sc = scoreDeal(out.deal, s.firstDealer);
     toast(`Saved · Board ${out.deal.boardNum} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
-    state.scrollToNext = true;
-    go(`#/s/${sessionId}`);
-    loadDay().catch(() => {});
+    // Stay on this board so they can see how the other tables did, then move on.
+    state.justSaved = `${sessionId}:${n}`;
+    const here = `#/deal/${sessionId}/${n}`;
+    if (location.hash === here) await render(); else go(here);
+    loadDay().then(() => {
+      const o = document.getElementById('others');
+      if (o && route().name === 'deal') o.innerHTML = othersOnBoard(out.deal.boardNum, sessionId);
+    }).catch(() => {});
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Save result';
     if (e.status === 409) {

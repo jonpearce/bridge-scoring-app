@@ -481,6 +481,9 @@ function renderGame(r) {
     <td class="num tew">${x.d && x.scored.ewPoints ? x.scored.ewPoints : ''}</td>
     <td>${x.d ? `<a href="#/deal/${s.id}/${x.n}">Edit</a>` : ''}</td></tr>`).join('');
 
+  const nb = s.startBoard + 4;
+  const nextBtn = `<button class="btn primary big block" data-newgame>Play the next 4 boards ›<span class="btn-sub">Boards ${nb}–${nb + 3}</span></button>`;
+
   $app.innerHTML = shell('play', `
     <header class="top">
       <p class="pairs"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
@@ -488,11 +491,11 @@ function renderGame(r) {
     </header>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done ? totalsCard(t) : ''}
-    ${done === 4 ? '<button class="btn primary big block" data-newgame>All 4 boards done &amp; displayed below: set up a new table</button>' : ''}
+    ${done === 4 ? `<p class="done-note">All 4 boards done — results below.</p>${nextBtn}` : ''}
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
     <div class="stack foot">
-      ${done < 4 ? '<button class="btn ghost block" data-newgame>Leave this table</button>' : ''}
+      ${done === 4 ? nextBtn : '<button class="btn ghost block" data-newgame>Leave this table</button>'}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
       ${logoutButton()}
@@ -504,12 +507,15 @@ function renderGame(r) {
     go('#/new');
   };
   $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
-    if (done === 4) return startNew();
     // In-app question (pop-up dialogs are blocked in some browsers)
-    sheet(`<h2>Leave this table?</h2>
+    sheet((done === 4 ? `<h2>Play the next 4 boards</h2>
+      <p>Your results at this table are saved. If someone at your next table has already set it up, join it instead.</p>
+      <button class="btn primary big block" id="leaveYes">Set up the next table (Boards ${nb}–${nb + 3})</button>
+      <button class="btn big block" id="leaveJoin">Join a table already started</button>`
+      : `<h2>Leave this table?</h2>
       <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this table from the Play screen.</p>
       <button class="btn primary big block" id="leaveYes">Set up a new table</button>
-      <button class="btn big block" id="leaveJoin">Join a different table</button>`, (root) => {
+      <button class="btn big block" id="leaveJoin">Join a different table</button>`), (root) => {
       root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
       root.querySelector('#leaveJoin').onclick = () => {
         closeSheet();

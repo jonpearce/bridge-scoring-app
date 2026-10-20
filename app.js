@@ -632,9 +632,7 @@ function renderEntry(r) {
     vulNs: vulForDeal(existing, s.firstDealer).ns, vulEw: vulForDeal(existing, s.firstDealer).ew,
   } : null;
   const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
-  const justSaved = !!existing && state.justSaved === `${s.id}:${n}`;
-  state.justSaved = null;
-  state.entry = { justSaved, sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
+  state.entry = { justSaved: false, sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
   const board = boardNumberFor(n, s.startBoard);
   // Link to the previous board's results at every table (greyed out if nobody has entered it yet).
   const prev = board - 1;
@@ -645,20 +643,12 @@ function renderEntry(r) {
       <div class="entry-toprow"><a href="#/s/${s.id}" class="back">‹ Back to the table</a>${prevLink}</div>
       <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
     </header>
-    ${justSaved ? '<p class="note saved">Saved ✓ How the other tables did is shown below.</p>'
-      : existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}
+    <div id="entryNote">${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}</div>
     <div id="entry"></div>
     <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   state.entry.draftKey = draftKey;
   drawEntry();
-  if (justSaved) {
-    // Bring the other tables' results into view, below the header.
-    requestAnimationFrame(() => {
-      const c = document.getElementById('othersCard');
-      if (c) window.scrollTo({ top: c.getBoundingClientRect().top + window.scrollY - 12, behavior: 'smooth' });
-    });
-  }
 }
 
 // After a save the bottom button moves on: the next board still to enter, or the table.
@@ -740,7 +730,10 @@ function onEntryTap(ev) {
   store.set(`draft:${state.entry.sessionId}:${state.entry.n}`, e);
   if (state.entry.justSaved) {
     state.entry.justSaved = false;
-    document.querySelector('.note.saved')?.replaceWith(Object.assign(document.createElement('p'), { className: 'note', textContent: 'Already saved. Tap Save to correct it.' }));
+    const note = document.getElementById('entryNote');
+    if (note?.firstElementChild) note.innerHTML = '<p class="note">Already saved. Tap Save to correct it.</p>';
+    const h = document.querySelector('#othersCard h2');
+    if (h) h.textContent = 'At other tables';
   }
   drawEntry();
 }
@@ -771,6 +764,16 @@ function drawPreview(s) {
   saveBtn.disabled = false;
 }
 
+// Only if the "At other tables" box is out of sight below (behind the Save bar),
+// scroll down just far enough to show it. Never scrolls up.
+function showOthersIfHidden() {
+  const c = document.getElementById('othersCard'); if (!c) return;
+  const bar = document.querySelector('.savebar')?.getBoundingClientRect().top || window.innerHeight;
+  const r = c.getBoundingClientRect();
+  const want = Math.min(r.bottom - bar + 12, r.top - 12);   // show the bottom, but keep its heading on screen
+  if (r.top > bar - 60 || r.bottom > bar) { if (want > 0) window.scrollBy({ top: want, behavior: 'smooth' }); }
+}
+
 async function saveEntry(draftKey) {
   const { sessionId, n, expectedUpdatedAt } = state.entry;
   const d = entryDeal();
@@ -784,13 +787,22 @@ async function saveEntry(draftKey) {
     store.del(draftKey);
     const sc = scoreDeal(out.deal, s.firstDealer);
     toast(`Saved · Board ${out.deal.boardNum} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
-    // Stay on this board so they can see how the other tables did, then move on.
-    state.justSaved = `${sessionId}:${n}`;
-    const here = `#/deal/${sessionId}/${n}`;
-    if (location.hash === here) await render(); else go(here);
+    // Stay on this board, right where it is on screen: show how the other
+    // tables did and turn the button into "Next". No redraw, no jump.
+    state.entry.justSaved = true;
+    state.entry.expectedUpdatedAt = out.deal.updatedAt || null;
+    // Replace the top note only if one is already there (same height, so nothing moves).
+    const note = document.getElementById('entryNote');
+    if (note?.firstElementChild) note.innerHTML = '<p class="note saved">Saved ✓</p>';
+    const h = document.querySelector('#othersCard h2');
+    if (h) h.innerHTML = '<span class="saved-tick">Saved ✓</span> At other tables';
+    const o = document.getElementById('others');
+    if (o) o.innerHTML = othersOnBoard(out.deal.boardNum, sessionId);
+    drawPreview(s);
+    showOthersIfHidden();
     loadDay().then(() => {
       const o = document.getElementById('others');
-      if (o && route().name === 'deal') o.innerHTML = othersOnBoard(out.deal.boardNum, sessionId);
+      if (o && route().name === 'deal' && state.entry?.justSaved) o.innerHTML = othersOnBoard(out.deal.boardNum, sessionId);
     }).catch(() => {});
   } catch (e) {
     btn.disabled = false; btn.textContent = 'Save result';

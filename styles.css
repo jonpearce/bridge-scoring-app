@@ -512,3 +512,4 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .add-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .add-row .btn { min-width: 84px; flex-direction: row; white-space: nowrap; }
 .err.small:empty { display: none; }
+.saved-tick { display: inline-block; margin-right: 6px; padding: 2px 10px; border-radius: 999px; background: #e6f2ea; color: var(--pos); font: 700 .9rem var(--sans); vertical-align: 2px; }

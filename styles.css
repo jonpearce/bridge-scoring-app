@@ -497,3 +497,7 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
   border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2s; } }
+
+/* Boards this phone hasn't entered yet (results hidden) */
+.bcell.locked { background: #f4f1ea; border-style: dashed; cursor: default; }
+.bcell.locked strong { color: #9a968c; }

@@ -598,6 +598,7 @@ function confirmLogout(extra = '') {
 // Greyed out (not a link) until someone has entered that board in this session.
 function prevBoardLink(prev, ret) {
   if (prev < 1) return '';
+  if (!canSee(prev)) return `<span class="prevlink off" aria-disabled="true" title="Shown once you’ve entered Board ${prev}">Board ${prev}s hidden</span>`;
   return playsOfBoard(prev, state.data.sessions).length
     ? `<a class="prevlink" href="#/board/${prev}/${ret}">See previous Board ${prev}s ›</a>`
     : `<span class="prevlink off" aria-disabled="true">See previous Board ${prev}s</span>`;
@@ -764,6 +765,24 @@ async function saveEntry(draftKey) {
 }
 
 // ---------- results of one board in other games ----------
+// Boards this phone may see other tables' results for: boards its own pair
+// (or the table it is sitting at) has already entered in this session.
+// Returns null for the organiser, who sees everything.
+function seenBoards() {
+  if (state.admin) return null;
+  const m = mine();
+  const names = store.get('prefs', {}).names;
+  const me = names?.[0] && names?.[1] ? pairKey(names[0], names[1]) : null;
+  const seen = new Set();
+  for (const s of state.data.sessions) {
+    const ours = s.id === m?.sessionId || (me && (pairKey(s.nsP1, s.nsP2) === me || pairKey(s.ewP1, s.ewP2) === me));
+    if (ours) for (const d of s.deals) seen.add(d.boardNum);
+  }
+  return seen;
+}
+const canSee = (board) => { const seen = seenBoards(); return !seen || seen.has(board); };
+const HIDDEN_NOTE = 'You’ll see the other tables’ results for this board once you’ve entered your own.';
+
 function playsOfBoard(board, sessions) {
   const out = [];
   for (const s of sessions) for (const d of s.deals) if (d.boardNum === board) out.push({ s, d, sc: scoreDeal(d, s.firstDealer) });
@@ -771,6 +790,7 @@ function playsOfBoard(board, sessions) {
 }
 
 function othersOnBoard(board, mySessionId) {
+  if (!canSee(board)) return `<p class="muted">${HIDDEN_NOTE}</p>`;
   const plays = playsOfBoard(board, state.data.sessions).filter((p) => p.s.id !== mySessionId);
   if (!plays.length) return '<p class="muted">No other table has recorded this board yet.</p>';
   return `<p class="muted">${plays.length} other table${plays.length > 1 ? 's' : ''}</p>` + plays.map((p) => playCard(p)).join('');
@@ -822,8 +842,10 @@ async function renderOthers() {
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
     <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
-    <p class="muted">Tap a board to compare every table’s result for that board.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
+    <p class="muted">Tap a board to compare every table’s result for that board. Boards you haven’t entered yet stay hidden.</p>
+    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => canSee(b)
+      ? `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`
+      : `<span class="bcell locked" aria-disabled="true"><span class="blbl">Board</span><strong>${b}</strong><span>Hidden till you play it</span></span>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded in this session yet.</p></div>'}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();
@@ -844,8 +866,9 @@ async function renderBoard(r) {
     : retSess ? `<a href="#/s/${retSess.id}" class="back">‹ Return to the table</a>`
     : '<a href="#/others" class="back">‹ All boards</a>';
   $app.innerHTML = shell(retSess ? 'play' : 'others', `
-    <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))} · ${plays.length} table${plays.length === 1 ? '' : 's'}</p></header>
-    <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
+    <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))}${canSee(board) ? ` · ${plays.length} table${plays.length === 1 ? '' : 's'}` : ''}</p></header>
+    <section class="card">${!canSee(board) ? `<p class="muted">${HIDDEN_NOTE}</p>`
+      : plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
 }
 
 // =============================================================
@@ -1015,6 +1038,7 @@ async function renderPair(r) {
       <p class="muted">${t.played} of 4 boards · Won ${us} · Opponents ${them}${t.complete ? (us > them ? ' · <strong>Won</strong>' : us < them ? ' · Lost' : ' · All square') : ''}</p>
       <table class="mini"><tbody>${scored.map(({ d, sc }) => {
         const pts = side === 'NS' ? sc.nsPoints : sc.ewPoints;
+        if (!canSee(d.boardNum)) return `<tr><td>Bd ${d.boardNum}</td><td colspan="3" class="muted">Hidden until you’ve entered it</td></tr>`;
         return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${esc(sc.outcome)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
       }).join('')}</tbody></table></section>`);
   }

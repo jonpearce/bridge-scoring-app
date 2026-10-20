@@ -156,7 +156,7 @@ function vulBadge(v) {
 // =============================================================
 function renderLogin() {
   $app.innerHTML = `<main class="screen login">
-    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Chicago Bridge</h1><p class="muted">Four-deal scoring for social bridge</p></div>
+    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Bridge</h1><p class="muted">Four-deal scoring for social bridge</p></div>
     <form class="card" id="loginForm">
       <label for="code" class="lbl">Access code</label>
       <input id="code" class="input big" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>

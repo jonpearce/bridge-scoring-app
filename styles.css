@@ -283,6 +283,8 @@ table.mini { width: 100%; border-collapse: collapse; margin-top: 8px; }
 .sheet {
   background: var(--paper); border-radius: 22px 22px 0 0; padding: 22px 16px calc(16px + env(safe-area-inset-bottom));
   display: grid; gap: 12px; max-width: 760px; width: 100%; margin: 0 auto;
+  /* Never taller than the screen: scroll inside so the buttons stay reachable. */
+  max-height: 92vh; max-height: 92dvh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
 }
 .toast {
   position: fixed; left: 50%; transform: translate(-50%, -20px); top: calc(12px + env(safe-area-inset-top));
@@ -480,7 +482,12 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .ac-list li.on, .ac-list li:hover, .ac-list li:active { background: var(--felt); }
 
 /* Organiser: player names list */
-.name-rows { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 8px; margin: 8px 0 16px; }
+.name-rows { display: grid; gap: 8px; margin: 8px 0 16px; }
+/* Player names panel: title and Done stay at the top while the list scrolls */
+.sheet-head { position: sticky; top: -22px; z-index: 1; margin: -22px -16px 0; padding: 14px 16px 10px;
+  background: var(--paper); display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+.sheet-head h2 { margin: 0; }
+.sheet-head .btn { min-height: 44px; padding: 6px 18px; }
 
 /* Tap feedback while a name is being removed / put back */
 .org-row.working > span { opacity: .5; }

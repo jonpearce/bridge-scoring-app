@@ -894,7 +894,7 @@ function organiserPanel(data) {
 function namesSheet() {
   const shown = state.data.names || [], hidden = state.data.hiddenNames || [];
   const sorted = [...shown].sort((a, b) => a.localeCompare(b));
-  sheet(`<h2>Player names</h2>
+  sheet(`<div class="sheet-head"><h2>Player names</h2><button class="btn primary" id="namesTop">Done</button></div>
     <p class="muted">These are suggested when setting up a table. Removing a name doesn’t change any results. If a removed name is used in a new game, it’s suggested again.</p>
     ${sorted.length ? `<div class="name-rows">${sorted.map((n) => `<div class="org-row"><span><strong>${esc(n)}</strong></span>
       <button class="btn danger small-btn" data-hide="${esc(n)}">Remove</button></div>`).join('')}</div>`
@@ -909,7 +909,7 @@ function namesSheet() {
       root.querySelectorAll('button').forEach((x) => (x.disabled = true));
       row.classList.add('working');
       btn.innerHTML = `<span class="spin" aria-hidden="true"></span>${hiding ? 'Removing…' : 'Putting back…'}`;
-      const scroll = [...root.querySelectorAll('.name-rows')].map((el) => el.scrollTop);
+      const scroll = root.querySelector('.sheet').scrollTop;
       try {
         await api('admin', { method: 'POST', body: { action, name } });
         // Update the lists here rather than reloading everything from the server.
@@ -923,7 +923,7 @@ function namesSheet() {
           d.names = [name, ...(d.names || [])];
         }
         namesSheet();
-        document.querySelectorAll('#sheet .name-rows').forEach((el, k) => (el.scrollTop = scroll[k] || 0));
+        document.querySelector('#sheet .sheet').scrollTop = scroll;
         toast(hiding ? `Removed ${name}` : `Put back ${name}`);
       } catch (e) {
         toast(e.message, 'error');
@@ -932,7 +932,10 @@ function namesSheet() {
     };
     root.querySelectorAll('[data-hide]').forEach((b) => (b.onclick = () => act(b, 'hideName', b.dataset.hide)));
     root.querySelectorAll('[data-unhide]').forEach((b) => (b.onclick = () => act(b, 'unhideName', b.dataset.unhide)));
-    root.querySelector('#namesDone').onclick = () => { closeSheet(); rerenderKeepScroll(); };
+    const done = () => { closeSheet(); rerenderKeepScroll(); };
+    root.querySelector('#namesDone').onclick = done;
+    root.querySelector('#namesTop').onclick = done;
+    root.querySelector('#sheetClose').remove();   // Done does the same job
   });
 }
 

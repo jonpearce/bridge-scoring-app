@@ -9,10 +9,10 @@ process.env.SUPABASE_URL = 'https://fake.supabase.test';
 process.env.ADMIN_CODE = 'Boss';
 
 // ---------- fake PostgREST ----------
-const T = { chi_events: [], chi_sessions: [], chi_deals: [] };
+const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [] };
 let clock = Date.parse('2026-10-12T10:00:00Z');
 const now = () => new Date((clock += 1000)).toISOString();
-const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'] };
+const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'] };
 
 function parse(url) {
   const u = new URL(url);
@@ -264,4 +264,32 @@ test('name suggestions: most recent first, one per name ignoring capitals', asyn
     { ns_p1: 'Ann', ns_p2: 'bob', ew_p1: 'Cath', ew_p2: '' },
     { ns_p1: 'ann', ns_p2: 'Bob', ew_p1: ' Dave ', ew_p2: null },
   ]), ['Ann', 'bob', 'Cath', 'Dave']);
+});
+
+test('removed names: hidden from suggestions until used again in a new game', async () => {
+  const { nameLists } = await import('../api/sessions.js');
+  const rows = [
+    { ns_p1: 'Ann', ns_p2: 'Bobb', ew_p1: 'Cath', ew_p2: 'Dave', created_at: '2026-10-19T10:00:00Z' },
+  ];
+  const hidden = [{ name_key: 'bobb', name: 'Bobb', hidden_at: '2026-10-20T00:00:00Z' }];
+  assert.deepEqual(nameLists(rows, hidden), { shown: ['Ann', 'Cath', 'Dave'], hidden: ['Bobb'] });
+  const later = [{ ns_p1: 'Bobb', ns_p2: 'X', ew_p1: 'Y', ew_p2: 'Z', created_at: '2026-10-21T10:00:00Z' }, ...rows];
+  assert.ok(nameLists(later, hidden).shown.includes('Bobb'));
+  assert.deepEqual(nameLists(later, hidden).hidden, []);
+});
+
+test('organiser can remove a name from suggestions and put it back', async () => {
+  await call(login, 'POST', { code: 'Boss' });
+  assert.ok((await call(sessions, 'GET')).body.names.includes('Cath'));
+  assert.equal((await call(admin, 'POST', { action: 'hideName', name: 'cath' })).status, 200);
+  let g = (await call(sessions, 'GET')).body;
+  assert.ok(!g.names.includes('Cath'));
+  assert.deepEqual(g.hiddenNames, ['cath']);
+  await call(admin, 'POST', { action: 'unhideName', name: 'Cath' });
+  g = (await call(sessions, 'GET')).body;
+  assert.ok(g.names.includes('Cath'));
+  assert.deepEqual(g.hiddenNames, []);
+  await call(login, 'POST', { code: 'golf' });
+  assert.equal((await call(admin, 'POST', { action: 'hideName', name: 'Cath' })).status, 403);
+  assert.equal((await call(sessions, 'GET')).body.hiddenNames, undefined);
 });

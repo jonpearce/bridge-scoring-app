@@ -251,9 +251,9 @@ function renderNew(r) {
   // organiser clears the day, a log-out, or on a new day, start again at 1.
   const last = lastRaw && lastRaw.eventId === curEventId() && sessionById(lastRaw.sessionId) ? lastRaw : null;
   const mySide = editing ? (mine()?.side || 'NS') : (lastRaw?.side || 'NS');
-  // Every name entered on any day (from the server), plus today's and this phone's own.
-  const nameList = uniqNames([...(prefs.names || []), ...(state.data.names || []),
-    ...state.data.sessions.flatMap((s) => [s.nsP1, s.nsP2, s.ewP1, s.ewP2])]);
+  // Every name entered on any day (from the server, less any the organiser removed), plus this phone's own pair.
+  const removed = new Set((state.data.hiddenNames || []).map((n) => n.toLowerCase()));
+  const nameList = uniqNames([...(prefs.names || []), ...(state.data.names || [])]).filter((n) => !removed.has(n.toLowerCase()));
   const played = editing && editing.deals.length > 0;
   const v = editing
     ? { startBoard: editing.startBoard, firstDealer: editing.firstDealer,
@@ -884,8 +884,36 @@ function organiserPanel(data) {
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
       <button class="btn danger big block" id="clearDay">Clear ${games.length === 1 ? 'the 1 table' : `all ${games.length} tables`} in this session</button>`
       : '<p class="muted">No tables in this session.</p>'}
+    <button class="btn ghost block" id="manageNames">Player names suggested when setting up a table…</button>
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
+}
+
+// Organiser: remove names from (or return them to) the set-up screen's suggestions.
+// Game results keep their names; this only affects the suggestion list.
+function namesSheet() {
+  const shown = state.data.names || [], hidden = state.data.hiddenNames || [];
+  const sorted = [...shown].sort((a, b) => a.localeCompare(b));
+  sheet(`<h2>Player names</h2>
+    <p class="muted">These are suggested when setting up a table. Removing a name doesn’t change any results. If a removed name is used in a new game, it’s suggested again.</p>
+    ${sorted.length ? `<div class="name-rows">${sorted.map((n) => `<div class="org-row"><span><strong>${esc(n)}</strong></span>
+      <button class="btn danger small-btn" data-hide="${esc(n)}">Remove</button></div>`).join('')}</div>`
+      : '<p class="muted">No names yet.</p>'}
+    ${hidden.length ? `<h3>Removed</h3><div class="name-rows">${hidden.map((n) => `<div class="org-row"><span class="muted">${esc(n)}</span>
+      <button class="btn ghost small-btn" data-unhide="${esc(n)}">Put back</button></div>`).join('')}</div>` : ''}
+    <button class="btn primary big block" id="namesDone">Done</button>`, (root) => {
+    const act = async (action, name) => {
+      try {
+        await api('admin', { method: 'POST', body: { action, name } });
+        await loadDay();
+        toast(action === 'hideName' ? `Removed ${name}` : `Put back ${name}`);
+        namesSheet();
+      } catch (e) { toast(e.message, 'error'); }
+    };
+    root.querySelectorAll('[data-hide]').forEach((b) => (b.onclick = () => act('hideName', b.dataset.hide)));
+    root.querySelectorAll('[data-unhide]').forEach((b) => (b.onclick = () => act('unhideName', b.dataset.unhide)));
+    root.querySelector('#namesDone').onclick = () => { closeSheet(); rerenderKeepScroll(); };
+  });
 }
 
 function wireOrganiser(data) {
@@ -938,6 +966,7 @@ function wireOrganiser(data) {
       };
     });
   };
+  document.getElementById('manageNames').onclick = () => namesSheet();
   document.getElementById('leaveOrg').onclick = async () => {
     try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
     store.del('my'); store.del('lastSession');

@@ -1,6 +1,6 @@
 import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
-  listEvents, resolveEvent, toEvent,
+  listEvents, resolveEvent, toEvent, authRole,
 } from './_lib.js';
 import { SEATS } from '../lib/chicago.js';
 
@@ -17,17 +17,20 @@ export default handler({
     const ev = await resolveEvent(url.searchParams.get('event'));
     const events = await listEvents();
     if (!events.some((e) => e.id === ev.id)) events.unshift(ev);
-    const [rows, past] = await Promise.all([
+    const [rows, past, hidden] = await Promise.all([
       db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`),
-      db('chi_sessions?select=ns_p1,ns_p2,ew_p1,ew_p2&order=created_at.desc&limit=2000'),
+      db('chi_sessions?select=ns_p1,ns_p2,ew_p1,ew_p2,created_at&order=created_at.desc&limit=2000'),
+      db('chi_hidden_names?select=name_key,name,hidden_at&order=name.asc'),
     ]);
+    const names = nameLists(past, hidden);
     send(res, 200, {
       event: toEvent(ev),
       latestId: events[0].id,
       events: events.map(toEvent),
       today: todayLocal(),
       sessions: rows.map(toSession),
-      names: allNames(past),
+      names: names.shown,
+      ...(authRole(req) === 'admin' ? { hiddenNames: names.hidden } : {}),
     });
   },
 
@@ -66,13 +69,29 @@ export default handler({
 
 // Every player name ever entered (any day), most recently used first, one
 // entry per name ignoring capitals — used to suggest names on the set-up screen.
+// Rows must be newest first.
 export function allNames(rows) {
+  return [...lastUse(rows).values()].map((x) => x.name);
+}
+function lastUse(rows) {
   const seen = new Map();
   for (const r of rows) for (const n of [r.ns_p1, r.ns_p2, r.ew_p1, r.ew_p2]) {
     const name = cleanName(n);
-    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), name);
+    if (name && !seen.has(name.toLowerCase())) seen.set(name.toLowerCase(), { name, at: r.created_at });
   }
-  return [...seen.values()];
+  return seen;
+}
+
+// Splits names into those suggested and those the organiser removed.
+// A removed name returns if a game created after its removal uses it.
+export function nameLists(rows, hiddenRows) {
+  const used = lastUse(rows);
+  const hid = new Map(hiddenRows.map((h) => [h.name_key, h]));
+  const stillHidden = (key) => hid.has(key) && !(String(used.get(key)?.at || '') > String(hid.get(key).hidden_at));
+  return {
+    shown: [...used.entries()].filter(([k]) => !stillHidden(k)).map(([, x]) => x.name),
+    hidden: hiddenRows.filter((h) => stillHidden(h.name_key)).map((h) => h.name),
+  };
 }
 
 function sessionFields(b, strict) {

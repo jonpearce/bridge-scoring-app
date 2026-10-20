@@ -478,3 +478,6 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .ac-list li { min-height: 44px; display: flex; align-items: center; padding: 8px 16px; font: 600 1.05rem var(--sans); color: var(--ink); cursor: pointer; border-bottom: 1px solid #f0ece2; }
 .ac-list li:last-child { border-bottom: 0; }
 .ac-list li.on, .ac-list li:hover, .ac-list li:active { background: var(--felt); }
+
+/* Organiser: player names list */
+.name-rows { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 8px; margin: 8px 0 16px; }

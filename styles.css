@@ -481,3 +481,12 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 
 /* Organiser: player names list */
 .name-rows { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; display: grid; gap: 8px; margin: 8px 0 16px; }
+
+/* Tap feedback while a name is being removed / put back */
+.org-row.working > span { opacity: .5; }
+.org-row.working .btn, .org-row.working .btn:disabled { opacity: 1; white-space: nowrap; display: inline-flex; flex-direction: row; align-items: center; justify-content: center; }
+.org-row button:disabled { cursor: progress; }
+.spin { display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+  border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2s; } }

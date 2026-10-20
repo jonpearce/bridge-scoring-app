@@ -902,16 +902,36 @@ function namesSheet() {
     ${hidden.length ? `<h3>Removed</h3><div class="name-rows">${hidden.map((n) => `<div class="org-row"><span class="muted">${esc(n)}</span>
       <button class="btn ghost small-btn" data-unhide="${esc(n)}">Put back</button></div>`).join('')}</div>` : ''}
     <button class="btn primary big block" id="namesDone">Done</button>`, (root) => {
-    const act = async (action, name) => {
+    const act = async (btn, action, name) => {
+      // Show straight away that the tap registered; block other taps until done.
+      const hiding = action === 'hideName';
+      const row = btn.closest('.org-row');
+      root.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      row.classList.add('working');
+      btn.innerHTML = `<span class="spin" aria-hidden="true"></span>${hiding ? 'Removing…' : 'Putting back…'}`;
+      const scroll = [...root.querySelectorAll('.name-rows')].map((el) => el.scrollTop);
       try {
         await api('admin', { method: 'POST', body: { action, name } });
-        await loadDay();
-        toast(action === 'hideName' ? `Removed ${name}` : `Put back ${name}`);
+        // Update the lists here rather than reloading everything from the server.
+        const key = name.toLowerCase();
+        const d = state.data;
+        if (hiding) {
+          d.names = (d.names || []).filter((n) => n.toLowerCase() !== key);
+          d.hiddenNames = [...(d.hiddenNames || []), name];
+        } else {
+          d.hiddenNames = (d.hiddenNames || []).filter((n) => n.toLowerCase() !== key);
+          d.names = [name, ...(d.names || [])];
+        }
         namesSheet();
-      } catch (e) { toast(e.message, 'error'); }
+        document.querySelectorAll('#sheet .name-rows').forEach((el, k) => (el.scrollTop = scroll[k] || 0));
+        toast(hiding ? `Removed ${name}` : `Put back ${name}`);
+      } catch (e) {
+        toast(e.message, 'error');
+        namesSheet();
+      }
     };
-    root.querySelectorAll('[data-hide]').forEach((b) => (b.onclick = () => act('hideName', b.dataset.hide)));
-    root.querySelectorAll('[data-unhide]').forEach((b) => (b.onclick = () => act('unhideName', b.dataset.unhide)));
+    root.querySelectorAll('[data-hide]').forEach((b) => (b.onclick = () => act(b, 'hideName', b.dataset.hide)));
+    root.querySelectorAll('[data-unhide]').forEach((b) => (b.onclick = () => act(b, 'unhideName', b.dataset.unhide)));
     root.querySelector('#namesDone').onclick = () => { closeSheet(); rerenderKeepScroll(); };
   });
 }

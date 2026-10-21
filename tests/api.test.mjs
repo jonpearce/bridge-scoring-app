@@ -200,9 +200,17 @@ test('a second game can record the same board independently', async () => {
   assert.equal(plays.length, 2);
 });
 
-test('board numbers and dealer are locked once play has started', async () => {
+test('board numbers can change after play (saved boards move); dealer cannot', async () => {
+  const was = T.chi_sessions.find((x) => x.id === sid).start_board;
   const r = await call(sessions, 'PATCH', { id: sid, startBoard: 20 });
-  assert.equal(r.status, 409);
+  assert.equal(r.status, 200);
+  assert.equal(r.body.session.startBoard, 20);
+  const nums = T.chi_deals.filter((d) => d.session_id === sid).map((d) => [d.deal_no, d.board_num]);
+  assert.ok(nums.length > 0 && nums.every(([n, b]) => b === 19 + n));
+  assert.ok(r.body.session.deals.every((d) => d.boardNum === 19 + d.dealNo));
+  await call(sessions, 'PATCH', { id: sid, startBoard: was });   // put it back for later tests
+  const d = await call(sessions, 'PATCH', { id: sid, firstDealer: 'W' });
+  assert.equal(d.status, 409);
   const ok = await call(sessions, 'PATCH', { id: sid, nsP2: 'Margaret' });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.session.nsP2, 'Margaret');

@@ -291,13 +291,13 @@ function renderNew(r) {
       </section>
       <section class="card stack">
         <label class="lbl" for="sb">First board number</label>
-        <div class="stepper"><button type="button" class="step" data-step="-1" aria-label="Lower" ${played ? 'disabled' : ''}>−</button>
-          <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" min="1" max="999" maxlength="3" value="${v.startBoard}" ${played ? 'disabled' : ''}>
-          <button type="button" class="step" data-step="1" aria-label="Higher" ${played ? 'disabled' : ''}>+</button></div>
+        <div class="stepper"><button type="button" class="step" data-step="-1" aria-label="Lower">−</button>
+          <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" min="1" max="999" maxlength="3" value="${v.startBoard}">
+          <button type="button" class="step" data-step="1" aria-label="Higher">+</button></div>
         <p class="muted" id="boardsLine"></p>
         <span class="lbl">Who deals first?</span>
         <div class="seg four" role="radiogroup" aria-label="First dealer">${['N', 'E', 'S', 'W'].map((d) => `<button type="button" role="radio" data-dealer="${d}" aria-checked="${v.firstDealer === d}" class="${v.firstDealer === d ? 'on' : ''}" ${played ? 'disabled' : ''}>${seatName(d)}</button>`).join('')}</div>
-        ${played ? '<p class="muted small">Board numbers and dealer are fixed once a result has been saved.</p>' : ''}
+        ${played ? '<p class="muted small">Who deals first is fixed once a result has been saved. Board numbers can still be changed; saved results move with them.</p>' : ''}
       </section>
       <p id="formErr" class="err" role="alert"></p>
       <button class="btn primary big block" type="submit">${editing ? 'Save names' : 'Start playing'}</button>
@@ -330,7 +330,7 @@ function renderNew(r) {
     ev.preventDefault();
     const fd = Object.fromEntries(new FormData(f));
     const body = {
-      startBoard: Math.max(1, parseInt(editing && played ? editing.startBoard : sbInput.value, 10) || 1), firstDealer: dealer,
+      startBoard: Math.max(1, parseInt(sbInput.value, 10) || 1), firstDealer: dealer,
       nsP1: side === 'NS' ? fd.us1 : fd.them1, nsP2: side === 'NS' ? fd.us2 : fd.them2,
       ewP1: side === 'EW' ? fd.us1 : fd.them1, ewP2: side === 'EW' ? fd.us2 : fd.them2,
     };
@@ -436,6 +436,50 @@ function nameSuggest(form, fields, names) {
 function radio(root, sel, on) {
   root.querySelectorAll(sel).forEach((b) => { b.classList.toggle('on', b === on); b.setAttribute('aria-checked', b === on); });
 }
+// Change a table's board numbers (all four move together). Allowed after
+// results are saved: the saved results move to the new numbers.
+function boardNumbersSheet(s, after) {
+  const played = s.deals.length;
+  sheet(`<h2>Change board numbers</h2>
+    <p>This table is playing <strong>Boards ${s.startBoard}–${s.startBoard + 3}</strong>. Type the number of the first board; the other three follow on.</p>
+    <label class="lbl" for="bnIn">First board number</label>
+    <div class="stepper"><button type="button" class="step" data-bstep="-1" aria-label="Lower">−</button>
+      <input id="bnIn" class="input center" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${s.startBoard}">
+      <button type="button" class="step" data-bstep="1" aria-label="Higher">+</button></div>
+    <p class="muted" id="bnLine"></p>
+    ${played ? `<p class="muted small">The ${played} result${played === 1 ? '' : 's'} already saved will move to the new board numbers.</p>` : ''}
+    <p class="err small" id="bnErr" role="alert"></p>
+    <button class="btn primary big block" id="bnSave">Save board numbers</button>`, (root) => {
+    const inp = root.querySelector('#bnIn'), line = root.querySelector('#bnLine'), err = root.querySelector('#bnErr');
+    const val = () => parseInt(inp.value, 10);
+    const show = () => { const v = val(); line.textContent = v >= 1 ? `Boards ${v}, ${v + 1}, ${v + 2} and ${v + 3}` : ''; err.textContent = ''; };
+    inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 3); show(); };
+    root.querySelectorAll('[data-bstep]').forEach((b) => (b.onclick = () => { inp.value = Math.min(999, Math.max(1, (val() || 1) + Number(b.dataset.bstep))); show(); }));
+    show();
+    root.querySelector('#bnSave').onclick = async (ev) => {
+      const v = val();
+      if (!(v >= 1 && v <= 999)) { err.textContent = 'Please enter a board number from 1 to 999.'; return; }
+      if (v === s.startBoard) { closeSheet(); return; }
+      const btn = ev.currentTarget;
+      root.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      btn.innerHTML = '<span class="spin" aria-hidden="true"></span>Saving…';
+      try {
+        const out = await api('sessions', { method: 'PATCH', body: { id: s.id, startBoard: v } });
+        upsertSession(out.session);
+        const last = store.get('lastSession');
+        if (last?.sessionId === s.id) store.set('lastSession', { ...last, startBoard: v });
+        closeSheet();
+        toast(`Now Boards ${v}–${v + 3}`);
+        after?.();
+      } catch (e) {
+        root.querySelectorAll('button').forEach((x) => (x.disabled = false));
+        btn.textContent = 'Save board numbers';
+        err.textContent = e.message;
+      }
+    };
+  });
+}
+
 function upsertSession(s) {
   const i = state.data.sessions.findIndex((x) => x.id === s.id);
   if (i >= 0) state.data.sessions[i] = s; else state.data.sessions.push(s);
@@ -509,6 +553,7 @@ function renderGame(r) {
       <p class="pairs"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
       ${isMine ? `<p class="you-are">You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong> <button class="btn small swap" id="swapSide" type="button">Swap</button></p>` : ''}
     </header>
+    <p class="board-range">Boards <strong>${s.startBoard}–${s.startBoard + 3}</strong> <button class="btn small swap" id="changeBoards" type="button">Change</button></p>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done ? totalsCard(t) : ''}
     ${done === 4 ? `<p class="done-note">All 4 boards done — results below.</p>${nextBtn}` : ''}
@@ -546,6 +591,7 @@ function renderGame(r) {
     });
   }));
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
+  document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
   document.getElementById('swapSide')?.addEventListener('click', () => {
     const side = m.side === 'NS' ? 'EW' : 'NS';
     store.set('my', { ...m, side });
@@ -658,13 +704,14 @@ function renderEntry(r) {
   $app.innerHTML = shell('play', `
     <header class="entry-head">
       <div class="entry-toprow"><a href="#/s/${s.id}" class="back">‹ Back to the table</a>${prevLink}</div>
-      <div class="bline"><span class="bnum big">Board ${board}</span><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
+      <div class="bline"><span class="bnum big">Board ${board}</span><button class="btn small swap" id="changeBoards" type="button" aria-label="Change board numbers">Change</button><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
     </header>
     <div id="entryNote">${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}</div>
     <div id="entry"></div>
     <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   state.entry.draftKey = draftKey;
+  document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, () => render());
   drawEntry();
 }
 
@@ -983,16 +1030,17 @@ function organiserPanel(data) {
     <p class="muted">Only phones logged in with the organiser code see this.</p>
     <button class="btn primary big block" id="newSession">Start a new session</button>
     <p class="muted small">Showing the session started ${esc(fmtStart(data.event))}${data.event.id === data.latestId ? ' (the newest)' : ''}</p>
+    <div class="org-row vul-switch"><span><strong>Vulnerability ${vulLocked() ? 'locked 🔒' : 'unlocked'}</strong><br>
+      <span class="muted small">${vulLocked() ? 'Every board uses N/S, E/W, Both, Neither. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
+      <button class="btn small-btn ${vulLocked() ? 'ghost' : 'primary'}" id="vulLockBtn">${vulLocked() ? 'Unlock' : 'Lock'}</button></div>
+    <button class="btn ghost block" id="manageNames">Edit names…</button>
+    <h3 class="org-sub">Tables in this session</h3>
     ${games.length ? `<div class="stack">${games.map((g) => `<div class="org-row">
         <span><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong><br>
         <span class="muted">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></span>
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
       <button class="btn danger big block" id="clearDay">Clear ${games.length === 1 ? 'the 1 table' : `all ${games.length} tables`} in this session</button>`
       : '<p class="muted">No tables in this session.</p>'}
-    <div class="org-row vul-switch"><span><strong>Vulnerability ${vulLocked() ? 'locked 🔒' : 'unlocked'}</strong><br>
-      <span class="muted small">${vulLocked() ? 'Every board uses N/S, E/W, Both, Neither. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
-      <button class="btn small-btn ${vulLocked() ? 'ghost' : 'primary'}" id="vulLockBtn">${vulLocked() ? 'Unlock' : 'Lock'}</button></div>
-    <button class="btn ghost block" id="manageNames">Edit names…</button>
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
 }

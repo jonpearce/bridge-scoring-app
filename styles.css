@@ -521,3 +521,8 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 /* Edit names rows: two buttons */
 .row-btns { display: flex; gap: 6px; }
 .row-btns .btn { white-space: nowrap; padding-left: 10px; padding-right: 10px; }
+
+/* Board numbers line on the table screen */
+.board-range { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 8px; font-size: 1.05rem; }
+.bline .btn.swap { margin-left: 4px; }
+.org-sub { margin: 14px 0 0; font: 700 1rem var(--sans); }

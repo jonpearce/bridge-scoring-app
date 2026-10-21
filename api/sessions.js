@@ -2,14 +2,15 @@ import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
   listEvents, resolveEvent, toEvent, authRole, getSettings,
 } from './_lib.js';
-import { SEATS } from '../lib/chicago.js';
+import { SEATS, boardNumberFor } from '../lib/chicago.js';
 
 const SELECT = 'id,location,start_board,first_dealer,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
 // GET   /api/sessions?event=ID  → every table (with boards) in that playing session
 //                                 (newest session if no ID), plus the list of sessions
 // POST  /api/sessions  { eventId, startBoard, firstDealer, nsP1, nsP2, ewP1, ewP2, clientToken }
-// PATCH /api/sessions  { id, ...fields }  → edit names; board/dealer only before play starts
+// PATCH /api/sessions  { id, ...fields }  → edit names or board numbers (any time — saved boards
+//                                           are renumbered); first dealer only before play starts
 export default handler({
   GET: async (req, res) => {
     requireAuth(req);
@@ -64,8 +65,16 @@ export default handler({
     if (!cur) throw new HttpError(404, 'Session not found');
     const row = sessionFields({ ...toSession(cur), ...b }, true);
     const played = (cur.chi_deals || []).length > 0;
-    if (played && (row.start_board !== cur.start_board || row.first_dealer !== cur.first_dealer)) {
-      throw new HttpError(409, 'The starting board and first dealer can’t be changed once a board has been recorded.');
+    if (played && row.first_dealer !== cur.first_dealer) {
+      throw new HttpError(409, 'The first dealer can’t be changed once a board has been recorded.');
+    }
+    // New board numbers: move every saved board at this table with them.
+    if (row.start_board !== cur.start_board) {
+      for (const d of cur.chi_deals || []) {
+        await db(`chi_deals?session_id=eq.${cur.id}&deal_no=eq.${d.deal_no}`, {
+          method: 'PATCH', body: { board_num: boardNumberFor(d.deal_no, row.start_board) },
+        });
+      }
     }
     const upd = await db(`chi_sessions?id=eq.${b.id}&select=${SELECT}`, { method: 'PATCH', body: row, prefer: 'return=representation' });
     send(res, 200, { session: toSession(upd[0]) });

@@ -1,4 +1,4 @@
-import { handler, send, readJson, requireAdmin, db, HttpError, getEvent, createEvent, toEvent, cleanName } from './_lib.js';
+import { handler, send, readJson, requireAdmin, db, HttpError, getEvent, createEvent, toEvent, cleanName, pruneEmptyEvents } from './_lib.js';
 
 // Organiser-only actions. Every request must carry the organiser cookie.
 // POST /api/admin { action: 'deleteGame', id }       → deletes one game and its boards
@@ -21,11 +21,14 @@ export default handler({
       if (!UUID.test(b.id || '')) throw new HttpError(400, 'Missing table');
       const gone = await db(`chi_sessions?id=eq.${b.id}&select=id,event_id`, { method: 'DELETE', prefer: 'return=representation' });
       if (!gone.length) throw new HttpError(404, 'That table has already been deleted.');
-      return send(res, 200, { deletedGames: 1 });
+      // Last table gone? The empty session leaves the history (unless it's the newest).
+      const removed = await pruneEmptyEvents();
+      return send(res, 200, { deletedGames: 1, sessionRemoved: removed.includes(gone[0].event_id) });
     }
 
     if (b.action === 'newSession') {
       const ev = await createEvent();
+      await pruneEmptyEvents(ev.id);   // an unused earlier session leaves the history
       return send(res, 201, { event: toEvent(ev) });
     }
 
@@ -34,7 +37,8 @@ export default handler({
       if (!ev) throw new HttpError(404, 'That session could not be found.');
       // Boards go with their tables (ON DELETE CASCADE). The session itself stays, now empty.
       const gone = await db(`chi_sessions?event_id=eq.${ev.id}&select=id`, { method: 'DELETE', prefer: 'return=representation' });
-      return send(res, 200, { deletedGames: gone.length });
+      const removed = await pruneEmptyEvents();
+      return send(res, 200, { deletedGames: gone.length, sessionRemoved: removed.includes(ev.id) });
     }
 
     if (b.action === 'hideName' || b.action === 'unhideName' || b.action === 'addName') {

@@ -1224,10 +1224,15 @@ function wireOrganiser(data) {
     sheet(`<h2>Delete this table?</h2>
       <p><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong>, boards ${g.startBoard}–${g.startBoard + 3}.</p>
       <p>Its ${g.deals.length} saved board${g.deals.length === 1 ? '' : 's'} will be removed for everyone. This can’t be undone.</p>
+      ${data.sessions.length === 1 && data.event.id !== data.latestId ? '<p class="muted">It’s the last table in this session, so the session will also be removed from the session history.</p>' : ''}
       <button class="btn danger big block" id="yes">Yes, delete this table</button>`, (root) => {
       root.querySelector('#yes').onclick = async () => {
         closeSheet();
-        try { await api('admin', { method: 'POST', body: { action: 'deleteGame', id: g.id } }); await after('Table deleted'); }
+        try {
+          const out = await api('admin', { method: 'POST', body: { action: 'deleteGame', id: g.id } });
+          if (out.sessionRemoved) store.del('event');
+          await after(out.sessionRemoved ? 'Table deleted · the empty session was removed from the history' : 'Table deleted');
+        }
         catch (e) { toast(e.message, 'error'); }
       };
     });
@@ -1236,11 +1241,16 @@ function wireOrganiser(data) {
     const n = data.sessions.length, boards = data.sessions.reduce((t, g) => t + g.deals.length, 0);
     sheet(`<h2>Clear every table in this session?</h2>
       <p>${esc(fmtStart(data.event))}</p>
-      <p>This deletes <strong>all ${n} table${n === 1 ? '' : 's'}</strong> and <strong>${boards} saved board${boards === 1 ? '' : 's'}</strong> for everyone, so you can start again. This can’t be undone.</p>
+      <p>This deletes <strong>all ${n} table${n === 1 ? '' : 's'}</strong> and <strong>${boards} saved board${boards === 1 ? '' : 's'}</strong> for everyone. This can’t be undone.</p>
+      <p class="muted">${data.event.id === data.latestId ? 'This is the newest session, so it stays (empty) for play to carry on in.' : 'The empty session will then be removed from the session history.'}</p>
       <button class="btn danger big block" id="yes">Yes, clear everything</button>`, (root) => {
       root.querySelector('#yes').onclick = async () => {
         closeSheet();
-        try { const out = await api('admin', { method: 'POST', body: { action: 'clearSession', eventId: data.event.id } }); await after(`Cleared ${out.deletedGames} table${out.deletedGames === 1 ? '' : 's'}`); }
+        try {
+          const out = await api('admin', { method: 'POST', body: { action: 'clearSession', eventId: data.event.id } });
+          if (out.sessionRemoved) store.del('event');
+          await after(`Cleared ${out.deletedGames} table${out.deletedGames === 1 ? '' : 's'}${out.sessionRemoved ? ' · the session was removed from the history' : ''}`);
+        }
         catch (e) { toast(e.message, 'error'); }
       };
     });

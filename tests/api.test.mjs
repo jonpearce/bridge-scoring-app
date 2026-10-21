@@ -364,3 +364,27 @@ test('fix a misspelt name: every table changes, scores merge, phones are told', 
   await call(login, 'POST', { code: 'golf' });
   assert.equal((await call(admin, 'POST', { action: 'renameName', from: 'Tom', to: 'Tim' })).status, 403);
 });
+
+test('empty sessions leave the history; the newest is kept', async () => {
+  const pause = () => new Promise((r) => setTimeout(r, 5));   // sessions are named by the time they start
+  await call(login, 'POST', { code: 'Boss' });
+  await pause();
+  const old = (await call(admin, 'POST', { action: 'newSession' })).body.event.id;
+  const t = await call(sessions, 'POST', { ...newTable, eventId: old, clientToken: crypto.randomUUID() });
+  await pause();
+  const cur = (await call(admin, 'POST', { action: 'newSession' })).body.event.id;
+  assert.ok(T.chi_events.some((e) => e.id === old));        // still has a table
+  const d = await call(admin, 'POST', { action: 'deleteGame', id: t.body.session.id });
+  assert.equal(d.body.sessionRemoved, true);
+  assert.ok(!T.chi_events.some((e) => e.id === old));       // emptied older session removed
+  assert.ok(T.chi_events.some((e) => e.id === cur));        // newest (empty) kept
+  const c = await call(admin, 'POST', { action: 'clearSession', eventId: cur });
+  assert.equal(c.body.sessionRemoved, false);
+  assert.ok(T.chi_events.some((e) => e.id === cur));
+  await pause();
+  const next = (await call(admin, 'POST', { action: 'newSession' })).body.event.id;
+  assert.ok(!T.chi_events.some((e) => e.id === cur));       // unused one goes when a new one starts
+  assert.ok(T.chi_events.some((e) => e.id === next));
+  assert.ok(T.chi_events.every((e) => e.id === next || T.chi_sessions.some((s) => s.event_id === e.id)));
+  await call(login, 'POST', { code: 'golf' });
+});

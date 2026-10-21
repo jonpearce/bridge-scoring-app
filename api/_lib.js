@@ -179,6 +179,23 @@ export async function createEvent() {
   return made[0];
 }
 
+/**
+ * Removes playing sessions that have no tables, so they drop out of the
+ * session history. The newest session is always kept (it's the one phones
+ * are on), as is `keepId` if given. Returns the ids removed.
+ */
+export async function pruneEmptyEvents(keepId = null) {
+  const [events, used] = await Promise.all([
+    db(`chi_events?select=id,created_at&order=created_at.desc`),
+    db('chi_sessions?select=event_id'),
+  ]);
+  const busy = new Set(used.map((r) => r.event_id));
+  const newest = [...events].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]?.id;
+  const gone = events.filter((e) => !busy.has(e.id) && e.id !== newest && e.id !== keepId).map((e) => e.id);
+  for (const id of gone) await db(`chi_events?id=eq.${id}`, { method: 'DELETE' });
+  return gone;
+}
+
 /** The chosen session, else the newest one; creates the first ever session if none exist. */
 export async function resolveEvent(id) {
   const chosen = id ? await getEvent(id) : null;

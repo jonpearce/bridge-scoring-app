@@ -217,4 +217,11 @@ export const toSession = (s) => ({
   deals: (s.chi_deals || []).map(toDeal).sort((a, b) => a.dealNo - b.dealNo),
 });
 
+// App-wide switches set by the organiser. Missing = default.
+export async function getSettings() {
+  const rows = await db('chi_settings?select=key,value');
+  const v = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  return { vulLocked: v.vul_locked !== false };   // locked unless the organiser has unlocked it
+}
+
 export const cleanName = (s, max = 40) => String(s ?? '').trim().replace(/\s+/g, ' ').slice(0, max);

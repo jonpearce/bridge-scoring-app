@@ -74,7 +74,16 @@ async function loadDay() {
     if (stale) { store.del('event'); if (d.event.id !== d.latestId) d = await api('sessions'); }
   }
   state.data = d;
+  applyNameFixes(d.nameFixes);
   return d;
+}
+function applyNameFixes(fixes) {
+  if (!fixes?.length) return;
+  const map = new Map(fixes.map((f) => [f.from, f.to]));
+  const prefs = store.get('prefs', {});
+  if (!prefs.names?.length) return;
+  const fixed = prefs.names.map((n) => map.get(String(n || '').trim().replace(/\s+/g, ' ').toLowerCase()) || n);
+  if (fixed.some((n, i) => n !== prefs.names[i])) store.set('prefs', { ...prefs, names: fixed });
 }
 
 // ---------- toast ----------
@@ -140,7 +149,9 @@ function scorePair(nsScore) {
   return `<span class="sc ns ${ns ? 'won' : 'nil'}"><span class="tag ns">N/S</span> ${ns}</span>`
        + `<span class="sc ew ${ew ? 'won' : 'nil'}"><span class="tag ew">E/W</span> ${ew}</span>`;
 }
-const VUL_CHOICES = [['none', 'Neither'], ['ns', 'N/S'], ['ew', 'E/W'], ['both', 'Both']];
+const VUL_CHOICES = [['ns', 'N/S'], ['ew', 'E/W'], ['both', 'Both'], ['none', 'Neither']];
+// Organiser can lock vulnerability for everyone (locked unless unlocked).
+const vulLocked = () => state.data?.settings?.vulLocked !== false;
 const vulKey = (v) => (v.ns && v.ew ? 'both' : v.ns ? 'ns' : v.ew ? 'ew' : 'none');
 const vulFromKey = (k) => ({ ns: k === 'ns' || k === 'both', ew: k === 'ew' || k === 'both' });
 function vulChoiceButtons(current, attr = 'vulset') {
@@ -436,7 +447,7 @@ function upsertSession(s) {
 function dealsFor(s) {
   return [1, 2, 3, 4].map((n) => {
     const d = s.deals.find((x) => x.dealNo === n);
-    const draft = d ? null : store.get(`draft:${s.id}:${n}`);
+    const draft = d || vulLocked() ? null : store.get(`draft:${s.id}:${n}`);
     const vul = d ? vulForDeal(d, s.firstDealer)
       : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : vulnerabilityFor(n, s.firstDealer));
     return { n, board: boardNumberFor(n, s.startBoard), vul, dealer: dealerFor(n, s.firstDealer), d, scored: d ? scoreDeal(d, s.firstDealer) : null };
@@ -462,7 +473,7 @@ function renderGame(r) {
   const card = (x) => {
     const title = `<span class="bnum">Board ${x.board}${x.d ? ' <span class="played">– played</span>' : ''}</span>`;
     const head = `<div class="bhead">${x.d ? title : `<div class="btitle">${title}${prevBoardLink(x.board - 1, `t:${s.id}`)}</div>`}
-      <span class="vultog">${['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
+      <span class="vultog">${vulLocked() ? vulBadge(x.vul) : ['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
     if (!x.d) {
       const isNext = next && next.n === x.n;
       return `<div class="card board todo ${isNext ? 'next' : ''}">${head}
@@ -557,6 +568,7 @@ function renderGame(r) {
 async function rerenderKeepScroll() { const y = window.scrollY; await render(); window.scrollTo(0, y); }
 
 async function setVul(s, n, v) {
+  if (vulLocked()) { toast('The organiser has locked the vulnerability.', 'error'); return; }
   const d = s.deals.find((x) => x.dealNo === n);
   const draftKey = `draft:${s.id}:${n}`;
   const board = boardNumberFor(n, s.startBoard);
@@ -633,6 +645,11 @@ function renderEntry(r) {
   } : null;
   const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
   state.entry = { justSaved: false, sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
+  if (vulLocked()) {
+    // Locked: the board keeps what it has (or the club default), whatever a draft says.
+    const v = existing ? vulForDeal(existing, s.firstDealer) : def;
+    state.entry.e.vulNs = v.ns; state.entry.e.vulEw = v.ew;
+  }
   const board = boardNumberFor(n, s.startBoard);
   // Link to the previous board's results at every table (greyed out if nobody has entered it yet).
   const prev = board - 1;
@@ -666,7 +683,10 @@ function drawEntry() {
   const box = document.getElementById('entry');
   const btn = (attr, val, label, on, cls = '') => `<button type="button" class="key ${cls} ${on ? 'on' : ''}" data-${attr}="${val}" aria-pressed="${on}">${label}</button>`;
   const changed = e.vulNs !== def.ns || e.vulEw !== def.ew;
-  const vulCard = `<section class="card keys">
+  const vulCard = vulLocked() ? `<section class="card keys vul-locked">
+      <h2 class="kh">Vulnerability</h2>
+      <p class="vl-line">${vulBadge({ ns: e.vulNs, ew: e.vulEw })}<span class="muted small">Set by the organiser</span></p>
+    </section>` : `<section class="card keys">
       <h2 class="kh">Who is vulnerable?</h2>
       ${vulChoiceButtons(vulKey({ ns: e.vulNs, ew: e.vulEw }))}
       ${changed ? `<p class="warn oneline">Not the usual (${vulnerabilityText(def).replace('vulnerable', 'vul')}). <button type="button" class="link" data-act="vulreset">(Undo)</button></p>` : ''}
@@ -691,18 +711,18 @@ function drawEntry() {
         <div class="decl">${['N', 'S', 'E', 'W'].map((d) => btn('decl', d, seatName(d), e.declarer === d, sideOf(d) === 'NS' ? 'ns' : 'ew')).join('')}</div>
       </section>
       <section class="card keys">
+        <h2 class="kh">Opening lead <span class="hint">(optional)</span></h2>
+        <div class="grid seven ranks">${LEAD_RANKS.map((rk) => btn('lrank', rk, rk, e.leadRank === rk)).join('')}</div>
+        <div class="grid four">${SUITS.map((st) => btn('lsuit', st, suitHtml(st), e.leadSuit === st, 'suitkey')).join('')}</div>
+        ${e.leadSuit || e.leadRank ? '<button type="button" class="link" data-act="nolead">Clear the lead</button>' : ''}
+      </section>
+      <section class="card keys">
         <h2 class="kh">Tricks taken by declarer</h2>
         <div class="tricks">
           <button type="button" class="key round" data-trick="-1" aria-label="One trick fewer" ${need == null || tricks <= 0 ? 'disabled' : ''}>−</button>
           <div class="tval"><strong>${tricks ?? '—'}</strong><span>${need == null ? 'Choose the contract first' : esc(res)}</span></div>
           <button type="button" class="key round" data-trick="1" aria-label="One trick more" ${need == null || tricks >= 13 ? 'disabled' : ''}>+</button>
         </div>
-      </section>
-      <section class="card keys">
-        <h2 class="kh">Opening lead <span class="hint">(optional)</span></h2>
-        <div class="grid seven ranks">${LEAD_RANKS.map((rk) => btn('lrank', rk, rk, e.leadRank === rk)).join('')}</div>
-        <div class="grid four">${SUITS.map((st) => btn('lsuit', st, suitHtml(st), e.leadSuit === st, 'suitkey')).join('')}</div>
-        ${e.leadSuit || e.leadRank ? '<button type="button" class="link" data-act="nolead">Clear the lead</button>' : ''}
       </section>
       <button type="button" class="btn ghost block" data-act="pass">Board was passed out</button>`;
   }
@@ -721,6 +741,7 @@ function onEntryTap(ev) {
   else if (d.trick) { const t = e.level + 6 + e.diff + Number(d.trick); if (t >= 0 && t <= 13) e.diff += Number(d.trick); }
   else if (d.lsuit) e.leadSuit = e.leadSuit === d.lsuit ? null : d.lsuit;
   else if (d.lrank) e.leadRank = e.leadRank === d.lrank ? null : d.lrank;
+  else if ((d.vulset || d.act === 'vulreset') && vulLocked()) return;
   else if (d.vulset) { const v = vulFromKey(d.vulset); e.vulNs = v.ns; e.vulEw = v.ew; }
   else if (d.act === 'vulreset') { e.vulNs = def.ns; e.vulEw = def.ew; }
   else if (d.act === 'nolead') { e.leadSuit = null; e.leadRank = null; }
@@ -968,6 +989,9 @@ function organiserPanel(data) {
         <button class="btn danger small-btn" data-delgame="${g.id}">Delete</button></div>`).join('')}</div>
       <button class="btn danger big block" id="clearDay">Clear ${games.length === 1 ? 'the 1 table' : `all ${games.length} tables`} in this session</button>`
       : '<p class="muted">No tables in this session.</p>'}
+    <div class="org-row vul-switch"><span><strong>Vulnerability ${vulLocked() ? 'locked 🔒' : 'unlocked'}</strong><br>
+      <span class="muted small">${vulLocked() ? 'Every board uses N/S, E/W, Both, Neither. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
+      <button class="btn small-btn ${vulLocked() ? 'ghost' : 'primary'}" id="vulLockBtn">${vulLocked() ? 'Unlock' : 'Lock'}</button></div>
     <button class="btn ghost block" id="manageNames">Edit names…</button>
     <button class="btn ghost block" id="leaveOrg">Leave organiser mode (log out)</button>
   </section>`;
@@ -987,7 +1011,8 @@ function namesSheet() {
       <p class="err small" id="addErr" role="alert"></p>
     </form>
     ${sorted.length ? `<div class="name-rows">${sorted.map((n) => `<div class="org-row"><span><strong>${esc(n)}</strong></span>
-      <button class="btn danger small-btn" data-hide="${esc(n)}">Remove</button></div>`).join('')}</div>`
+      <span class="row-btns"><button class="btn ghost small-btn" data-fix="${esc(n)}">Fix spelling</button>
+      <button class="btn danger small-btn" data-hide="${esc(n)}">Remove</button></span></div>`).join('')}</div>`
       : '<p class="muted">No names yet.</p>'}
     ${hidden.length ? `<h3>Removed</h3><div class="name-rows">${hidden.map((n) => `<div class="org-row"><span class="muted">${esc(n)}</span>
       <button class="btn ghost small-btn" data-unhide="${esc(n)}">Put back</button></div>`).join('')}</div>` : ''}
@@ -1045,12 +1070,75 @@ function namesSheet() {
         err.textContent = e.message;
       }
     };
+    root.querySelectorAll('[data-fix]').forEach((b) => (b.onclick = () => fixSpellingSheet(b.dataset.fix)));
     root.querySelectorAll('[data-hide]').forEach((b) => (b.onclick = () => act(b, 'hideName', b.dataset.hide)));
     root.querySelectorAll('[data-unhide]').forEach((b) => (b.onclick = () => act(b, 'unhideName', b.dataset.unhide)));
     const done = () => { closeSheet(); rerenderKeepScroll(); };
     root.querySelector('#namesDone').onclick = done;
     root.querySelector('#namesTop').onclick = done;
     root.querySelector('#sheetClose').remove();   // Done does the same job
+  });
+}
+
+// Organiser: correct a misspelt name at every table on every day. If the
+// correct spelling is already in use, the two people's scores merge.
+function fixSpellingSheet(wrong) {
+  const others = (state.data.names || []).filter((n) => n.toLowerCase() !== wrong.toLowerCase());
+  sheet(`<div class="sheet-head"><h2>Fix spelling</h2><button class="btn ghost" id="fixBack">Back</button></div>
+    <p>Change <strong>${esc(wrong)}</strong> to the correct spelling. This changes it at every table on every day.</p>
+    <p class="muted">If the correct name is already in the list, pick it: the two sets of scores are combined into one person.</p>
+    <form id="fixForm" class="stack" autocomplete="off">
+      <label class="lbl" for="fixTo">Correct spelling</label>
+      <div class="ac"><input name="fixTo" id="fixTo" class="input" maxlength="40" autocapitalize="words" value="${esc(wrong)}"></div>
+      <p class="err small" id="fixErr" role="alert"></p>
+      <button class="btn primary big block" id="fixGo" type="submit">Continue</button>
+    </form>`, (root) => {
+    root.querySelector('#sheetClose').remove();
+    root.querySelector('#fixBack').onclick = () => namesSheet();
+    const f = root.querySelector('#fixForm'), inp = f.elements.fixTo, err = root.querySelector('#fixErr');
+    nameSuggest(f, ['fixTo'], others);
+    inp.oninput = () => { err.textContent = ''; };
+    setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      const to = inp.value.trim().replace(/\s+/g, ' ');
+      if (!to) { err.textContent = 'Please type the correct spelling.'; return; }
+      if (to === wrong) { err.textContent = 'That’s the same spelling. Change it first.'; return; }
+      const btn = root.querySelector('#fixGo');
+      btn.disabled = true; btn.innerHTML = '<span class="spin" aria-hidden="true"></span>Checking…';
+      try {
+        const { tables } = await api('admin', { method: 'POST', body: { action: 'renameName', from: wrong, to, dryRun: true } });
+        const merge = others.some((n) => n.toLowerCase() === to.toLowerCase());
+        confirmFix(wrong, to, tables, merge);
+      } catch (e) {
+        btn.disabled = false; btn.textContent = 'Continue';
+        err.textContent = e.message;
+      }
+    };
+  });
+}
+function confirmFix(wrong, to, tables, merge) {
+  sheet(`<h2>${merge ? 'Combine these names?' : 'Change this name?'}</h2>
+    <p><strong>${esc(wrong)}</strong> → <strong>${esc(to)}</strong></p>
+    <p>${tables ? `This changes <strong>${tables} table${tables === 1 ? '' : 's'}</strong> (all days).` : 'No table uses this spelling yet; only the list of names changes.'}
+    ${merge ? ` ${esc(wrong)}’s scores will be added to ${esc(to)}’s in the results.` : ''}</p>
+    <p class="muted">The board scores themselves don’t change. ${merge ? 'Once combined, the two can’t be separated again.' : 'You can fix the spelling again later if needed.'}</p>
+    <button class="btn primary big block" id="fixYes">Yes, change ${esc(wrong)} to ${esc(to)}</button>`, (root) => {
+    root.querySelector('#sheetClose').onclick = () => namesSheet();
+    root.querySelector('#fixYes').onclick = async (ev) => {
+      const btn = ev.currentTarget;
+      root.querySelectorAll('button').forEach((x) => (x.disabled = true));
+      btn.innerHTML = '<span class="spin" aria-hidden="true"></span>Changing…';
+      try {
+        const out = await api('admin', { method: 'POST', body: { action: 'renameName', from: wrong, to } });
+        await loadDay();
+        toast(`${wrong} changed to ${to}${out.tables ? ` at ${out.tables} table${out.tables === 1 ? '' : 's'}` : ''}`);
+        namesSheet();
+      } catch (e) {
+        toast(e.message, 'error');
+        namesSheet();
+      }
+    };
   });
 }
 
@@ -1105,6 +1193,16 @@ function wireOrganiser(data) {
     });
   };
   document.getElementById('manageNames').onclick = () => namesSheet();
+  document.getElementById('vulLockBtn').onclick = async (ev) => {
+    const btn = ev.currentTarget, locked = !vulLocked();
+    btn.disabled = true; btn.innerHTML = `<span class="spin" aria-hidden="true"></span>${locked ? 'Locking…' : 'Unlocking…'}`;
+    try {
+      await api('admin', { method: 'POST', body: { action: 'setVulLock', locked } });
+      state.data.settings = { ...(state.data.settings || {}), vulLocked: locked };
+      toast(locked ? 'Vulnerability locked for everyone' : 'Vulnerability unlocked');
+      rerenderKeepScroll();
+    } catch (e) { toast(e.message, 'error'); rerenderKeepScroll(); }
+  };
   document.getElementById('leaveOrg').onclick = async () => {
     try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
     store.del('my'); store.del('lastSession');

@@ -1,4 +1,4 @@
-import { handler, send, readJson, requireAuth, db, HttpError, toDeal } from './_lib.js';
+import { handler, send, readJson, requireAuth, db, HttpError, toDeal, getSettings } from './_lib.js';
 import { scoreDeal, validateDeal, boardNumberFor, vulnerabilityFor, SCORING_VERSION } from '../lib/chicago.js';
 
 // PUT /api/deal
@@ -25,10 +25,19 @@ export default handler({
           declarer: b.declarer, tricks: Number(b.tricks),
           leadSuit: b.leadSuit || null, leadRank: b.leadRank || null,
         };
-    // Vulnerability: as chosen on the scoring screen, else the Chicago default.
+    // Vulnerability: as chosen on the scoring screen, else the club default.
+    // When the organiser has locked it, nobody can change it: a new board gets
+    // the default, a correction keeps whatever the board already had.
     const def = vulnerabilityFor(dealNo, sess.first_dealer);
-    deal.vulNs = typeof b.vulNs === 'boolean' ? b.vulNs : def.ns;
-    deal.vulEw = typeof b.vulEw === 'boolean' ? b.vulEw : def.ew;
+    const { vulLocked } = await getSettings();
+    if (vulLocked) {
+      const was = (await db(`chi_deals?session_id=eq.${sess.id}&deal_no=eq.${dealNo}&select=vul_ns,vul_ew`))[0];
+      deal.vulNs = typeof was?.vul_ns === 'boolean' ? was.vul_ns : def.ns;
+      deal.vulEw = typeof was?.vul_ew === 'boolean' ? was.vul_ew : def.ew;
+    } else {
+      deal.vulNs = typeof b.vulNs === 'boolean' ? b.vulNs : def.ns;
+      deal.vulEw = typeof b.vulEw === 'boolean' ? b.vulEw : def.ew;
+    }
     const err = validateDeal(deal);
     if (err) throw new HttpError(400, err);
     const scored = scoreDeal(deal, sess.first_dealer);

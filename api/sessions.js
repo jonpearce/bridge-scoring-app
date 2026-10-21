@@ -1,6 +1,6 @@
 import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
-  listEvents, resolveEvent, toEvent, authRole,
+  listEvents, resolveEvent, toEvent, authRole, getSettings,
 } from './_lib.js';
 import { SEATS } from '../lib/chicago.js';
 
@@ -17,11 +17,13 @@ export default handler({
     const ev = await resolveEvent(url.searchParams.get('event'));
     const events = await listEvents();
     if (!events.some((e) => e.id === ev.id)) events.unshift(ev);
-    const [rows, past, hidden, added] = await Promise.all([
+    const [rows, past, hidden, added, settings, fixes] = await Promise.all([
       db(`chi_sessions?event_id=eq.${ev.id}&select=${SELECT}&order=created_at.asc`),
       db('chi_sessions?select=ns_p1,ns_p2,ew_p1,ew_p2,created_at&order=created_at.desc&limit=2000'),
       db('chi_hidden_names?select=name_key,name,hidden_at&order=name.asc'),
       db('chi_added_names?select=name_key,name,added_at'),
+      getSettings(),
+      db('chi_name_fixes?select=from_key,to_name'),
     ]);
     const names = nameLists(past, hidden, added);
     send(res, 200, {
@@ -31,6 +33,8 @@ export default handler({
       today: todayLocal(),
       sessions: rows.map(toSession),
       names: names.shown,
+      settings,
+      nameFixes: fixes.map((f) => ({ from: f.from_key, to: f.to_name })),
       ...(authRole(req) === 'admin' ? { hiddenNames: names.hidden } : {}),
     });
   },

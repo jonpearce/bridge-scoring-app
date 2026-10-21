@@ -9,10 +9,10 @@ process.env.SUPABASE_URL = 'https://fake.supabase.test';
 process.env.ADMIN_CODE = 'Boss';
 
 // ---------- fake PostgREST ----------
-const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [], chi_added_names: [] };
+const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [], chi_added_names: [], chi_settings: [], chi_name_fixes: [] };
 let clock = Date.parse('2026-10-12T10:00:00Z');
 const now = () => new Date((clock += 1000)).toISOString();
-const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'], chi_added_names: ['name_key'] };
+const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'], chi_added_names: ['name_key'], chi_settings: ['key'], chi_name_fixes: ['from_key'] };
 
 function parse(url) {
   const u = new URL(url);
@@ -143,7 +143,7 @@ test('a correction updates the same record (no duplicate)', async () => {
   const cur = T.chi_deals.find((d) => d.session_id === sid && d.deal_no === 1);
   const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 1, level: 3, strain: 'NT', declarer: 'N', tricks: 9, expectedUpdatedAt: cur.updated_at });
   assert.equal(r.status, 200);
-  assert.equal(r.body.deal.nsScore, 400);
+  assert.equal(r.body.deal.nsScore, 600);   // deal 1: N/S vulnerable
   assert.equal(T.chi_deals.filter((d) => d.session_id === sid && d.deal_no === 1).length, 1);
 });
 
@@ -163,6 +163,20 @@ test('passed-out board stores no contract and scores 0', async () => {
 test('invalid entries are refused', async () => {
   const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 2, level: 9, strain: 'S', declarer: 'N', tricks: 9 });
   assert.equal(r.status, 400);
+});
+
+test('vulnerability is locked by default: choices sent by a phone are ignored', async () => {
+  const cur = T.chi_deals.find((d) => d.session_id === sid && d.deal_no === 2);
+  const r = await call(deal, 'PUT', { sessionId: sid, dealNo: 2, level: 2, strain: 'S', declarer: 'E', tricks: 9, vulNs: true, vulEw: true, expectedUpdatedAt: cur.updated_at });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.deal.vulNs, cur.vul_ns);           // kept what the board had
+  assert.equal(r.body.deal.vulEw, cur.vul_ew);
+  assert.equal((await call(sessions, 'GET')).body.settings.vulLocked, true);
+  // organiser unlocks for the next test
+  await call(login, 'POST', { code: 'Boss' });
+  assert.equal((await call(admin, 'POST', { action: 'setVulLock', locked: false })).status, 200);
+  assert.equal((await call(sessions, 'GET')).body.settings.vulLocked, false);
+  await call(login, 'POST', { code: 'golf' });   // back to an ordinary player
 });
 
 test('vulnerability chosen on the scoring screen is used and stored', async () => {
@@ -309,4 +323,36 @@ test('organiser can add a name; removing it hides it; putting back keeps it', as
   assert.equal((await call(admin, 'POST', { action: 'addName', name: '   ' })).status, 400);
   await call(login, 'POST', { code: 'golf' });
   assert.equal((await call(admin, 'POST', { action: 'addName', name: 'Sneaky' })).status, 403);
+});
+
+test('organiser can lock vulnerability again', async () => {
+  await call(login, 'POST', { code: 'Boss' });
+  await call(admin, 'POST', { action: 'setVulLock', locked: true });
+  assert.equal((await call(sessions, 'GET')).body.settings.vulLocked, true);
+  await call(login, 'POST', { code: 'golf' });
+  assert.equal((await call(admin, 'POST', { action: 'setVulLock', locked: false })).status, 403);
+});
+
+test('fix a misspelt name: every table changes, scores merge, phones are told', async () => {
+  await call(login, 'POST', { code: 'Boss' });
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const a = await call(sessions, 'POST', { ...newTable, eventId: ev, nsP1: 'Margret', nsP2: 'Tom', ewP1: 'Una', ewP2: 'Vic', clientToken: crypto.randomUUID() });
+  const b = await call(sessions, 'POST', { ...newTable, eventId: ev, nsP1: 'Margaret', nsP2: 'Tom', ewP1: 'Wes', ewP2: 'Xan', clientToken: crypto.randomUUID() });
+  assert.equal(a.status, 201); assert.equal(b.status, 201);
+  const dry = await call(admin, 'POST', { action: 'renameName', from: 'margret', to: 'Margaret', dryRun: true });
+  assert.equal(dry.body.tables, 1);
+  assert.equal(T.chi_sessions.find((r) => r.id === a.body.session.id).ns_p1, 'Margret');   // dry run changes nothing
+  const r = await call(admin, 'POST', { action: 'renameName', from: 'Margret', to: 'Margaret' });
+  assert.equal(r.status, 200); assert.equal(r.body.tables, 1);
+  const row = T.chi_sessions.find((x) => x.id === a.body.session.id);
+  assert.equal(row.ns_p1, 'Margaret');
+  assert.equal(row.location, 'Margaret & Tom v Una & Vic');
+  const g = (await call(sessions, 'GET')).body;
+  assert.ok(!g.names.includes('Margret') && g.names.includes('Margaret'));
+  assert.deepEqual(g.nameFixes, [{ from: 'margret', to: 'Margaret' }]);
+  // can't merge two people who sat at the same table
+  const c = await call(admin, 'POST', { action: 'renameName', from: 'Tom', to: 'Margaret' });
+  assert.equal(c.status, 409);
+  await call(login, 'POST', { code: 'golf' });
+  assert.equal((await call(admin, 'POST', { action: 'renameName', from: 'Tom', to: 'Tim' })).status, 403);
 });

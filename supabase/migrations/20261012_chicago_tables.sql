@@ -77,3 +77,8 @@ alter table public.chi_events   enable row level security;
 alter table public.chi_sessions enable row level security;
 alter table public.chi_deals    enable row level security;
 revoke all on public.chi_events, public.chi_sessions, public.chi_deals from anon, authenticated;
+
+-- Only the app's server (service_role) may use these tables. Explicit grant so
+-- the tables still work if they are ever re-created after Supabase's
+-- 30 Oct 2026 change (no automatic grants for new tables).
+grant select, insert, update, delete on public.chi_events, public.chi_sessions, public.chi_deals to service_role;

@@ -12,3 +12,8 @@ create table if not exists public.chi_hidden_names (
 );
 alter table public.chi_hidden_names enable row level security;
 revoke all on public.chi_hidden_names from anon, authenticated;
+
+-- Only the app's server (service_role) may use these tables. Explicit grant so
+-- the tables still work if they are ever re-created after Supabase's
+-- 30 Oct 2026 change (no automatic grants for new tables).
+grant select, insert, update, delete on public.chi_hidden_names to service_role;

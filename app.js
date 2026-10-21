@@ -417,7 +417,7 @@ function nameSuggest(form, fields, names) {
       }, 350);
     });
     inp.addEventListener('input', open);
-    inp.addEventListener('blur', () => setTimeout(close, 150));
+    inp.addEventListener('blur', () => setTimeout(() => { if (!down) close(); }, 150));
     inp.addEventListener('keydown', (e) => {
       if (list.hidden) { if (e.key === 'ArrowDown') { open(); e.preventDefault(); } return; }
       if (e.key === 'ArrowDown') { active = Math.min(shown.length - 1, active + 1); highlight(); e.preventDefault(); }
@@ -425,11 +425,27 @@ function nameSuggest(form, fields, names) {
       else if (e.key === 'Enter' && active >= 0) { pick(active); e.preventDefault(); }
       else if (e.key === 'Escape') close();
     });
-    // pointerdown + preventDefault keeps the box focused (and the keyboard up) while tapping.
+    // Tap a name to choose it; swipe to scroll the list. A name is only chosen
+    // when the finger lifts without having moved (and the list hasn't scrolled).
+    let down = null;
     list.addEventListener('pointerdown', (e) => {
       const li = e.target.closest('li'); if (!li) return;
+      down = { x: e.clientX, y: e.clientY, top: list.scrollTop, li };
+      if (e.pointerType === 'mouse') e.preventDefault();   // keep the box focused
+    });
+    list.addEventListener('pointermove', (e) => {
+      if (down && (Math.abs(e.clientX - down.x) > 8 || Math.abs(e.clientY - down.y) > 8)) down = null;
+    });
+    list.addEventListener('pointercancel', () => { down = null; });   // the browser took over to scroll
+    list.addEventListener('scroll', () => { if (down && Math.abs(list.scrollTop - down.top) > 3) down = null; }, { passive: true });
+    list.addEventListener('pointerup', (e) => {
+      const d = down; down = null;
+      const li = e.target.closest('li');
+      if (!d || !li || li !== d.li) return;
       e.preventDefault(); pick(Number(li.dataset.k));
     });
+    // Stop the tap from taking focus off the box, so the keyboard stays up.
+    list.addEventListener('mousedown', (e) => e.preventDefault());
   });
 }
 

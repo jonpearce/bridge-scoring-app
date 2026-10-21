@@ -541,10 +541,10 @@ function renderGame(r) {
       <a class="btn block ${isNext ? 'primary' : ''}" href="#/deal/${s.id}/${x.n}">Enter result ›</a></div>`;
     }
     const sc = x.scored;
-    return `<div class="card board">${head}
+    return `<div class="card board res-${madeClass(x.d) || 'pass'}">${head}
       <dl class="facts">
         <div><dt>Contract</dt><dd>${contractHtml(x.d)}${x.d.passedOut ? '' : ` <span class="by">by ${seatName(x.d.declarer)}</span>`}</dd></div>
-        ${x.d.passedOut ? '' : `<div class="res"><dt>Result</dt><dd>${x.d.tricks} trick${x.d.tricks === 1 ? '' : 's'},<br>${esc(sc.outcome)}</dd></div>
+        ${x.d.passedOut ? '' : `<div class="res"><dt>Result</dt><dd><span class="oc ${madeClass(x.d)}">${x.d.tricks} trick${x.d.tricks === 1 ? '' : 's'},<br>${esc(sc.outcome)}</span></dd></div>
         <div><dt>Lead</dt><dd>${leadHtml(x.d)}</dd></div>`}
       </dl>
       <div class="scores">${scorePair(sc.nsScore)}</div>
@@ -556,7 +556,7 @@ function renderGame(r) {
     <td>${x.d ? contractHtml(x.d) : '<span class="muted">—</span>'}</td>
     <td>${x.d && !x.d.passedOut ? short(x.scored.winner) : ''}</td>
     <td>${x.d && !x.d.passedOut ? leadHtml(x.d) : ''}</td>
-    <td>${x.d ? esc(x.scored.outcome) : `<a href="#/deal/${s.id}/${x.n}">Enter</a>`}</td>
+    <td>${x.d ? outcomeHtml(x.d, x.scored) : `<a href="#/deal/${s.id}/${x.n}">Enter</a>`}</td>
     <td class="num tns">${x.d && x.scored.nsPoints ? x.scored.nsPoints : ''}</td>
     <td class="num tew">${x.d && x.scored.ewPoints ? x.scored.ewPoints : ''}</td>
     <td>${x.d ? `<a href="#/deal/${s.id}/${x.n}">Edit</a>` : ''}</td></tr>`).join('');
@@ -654,6 +654,11 @@ async function setVul(s, n, v) {
     loadDay().then(rerenderKeepScroll).catch(() => {});
   }
 }
+
+// Did the declarer make the contract? 'made' (exactly or with overtricks),
+// 'down', or '' for a passed-out board. Used to colour results green / red.
+const madeClass = (d) => (!d || d.passedOut ? '' : d.tricks >= d.level + 6 ? 'made' : 'down');
+const outcomeHtml = (d, sc) => `<span class="oc ${madeClass(d)}">${esc(sc.outcome)}</span>`;
 
 function totalsCard(t) {
   const verdict = !t.complete ? 'So far' : t.net === 0 ? 'Result' : 'Winners';
@@ -942,11 +947,11 @@ function othersOnBoard(board, mySessionId) {
 }
 
 function playCard({ s, d, sc }, highlight = false) {
-  return `<div class="play ${highlight ? 'mine' : ''}">
+  return `<div class="play res-${madeClass(d) || 'pass'} ${highlight ? 'mine' : ''}">
     ${highlight ? '<span class="pill">Your table</span>' : ''}
     <p class="pl-names"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
     <p class="pl-res">${contractHtml(d)}${d.passedOut ? '' : ` by ${seatName(d.declarer)} · ${d.tricks} tricks · lead ${leadHtml(d)}`}</p>
-    <p class="muted">${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + esc(sc.outcome)}</p>
+    <p class="muted">${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + outcomeHtml(d, sc)}</p>
     <div class="scores">${scorePair(sc.nsScore)}</div></div>`;
 }
 
@@ -1289,11 +1294,11 @@ async function renderPair(r) {
     const us = side === 'NS' ? t.nsPoints : t.ewPoints, them = side === 'NS' ? t.ewPoints : t.nsPoints;
     items.push(`<section class="card">
       <div class="pl-top"><strong>v ${esc(opp)}</strong><span class="pill ${side === 'NS' ? 'ns' : 'ew'}">${short(side)}</span></div>
-      <p class="muted">${t.played} of 4 boards · Won ${us} · Opponents ${them}${t.complete ? (us > them ? ' · <strong>Won</strong>' : us < them ? ' · Lost' : ' · All square') : ''}</p>
+      <p class="muted">${t.played} of 4 boards · Won ${us} · Opponents ${them}${t.complete ? (us > them ? ' · <strong class="oc made">Won</strong>' : us < them ? ' · <strong class="oc down">Lost</strong>' : ' · All square') : ''}</p>
       <table class="mini"><tbody>${scored.map(({ d, sc }) => {
         const pts = side === 'NS' ? sc.nsPoints : sc.ewPoints;
         if (!canSee(d.boardNum)) return `<tr><td>Bd ${d.boardNum}</td><td colspan="3" class="muted">Hidden until you’ve entered it</td></tr>`;
-        return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${esc(sc.outcome)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
+        return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${outcomeHtml(d, sc)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
       }).join('')}</tbody></table></section>`);
   }
   $app.innerHTML = shell('day', `

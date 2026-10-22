@@ -120,6 +120,8 @@ export function requireAdmin(req) {
   if (authRole(req) !== 'admin') throw new HttpError(403, 'Only the organiser can do this.');
 }
 
+const DB_DOWN_MESSAGE = 'Oops! Our database is having a snooze at the moment - sorry. Please try again later :)';
+
 // ---------- Supabase REST (server-side only, secret key never leaves here) ----------
 
 export async function db(path, { method = 'GET', body, prefer } = {}) {
@@ -130,13 +132,15 @@ export async function db(path, { method = 'GET', body, prefer } = {}) {
   try {
     r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch {
-    throw new HttpError(503, 'Could not reach the database. Please try again.');
+    throw new HttpError(503, DB_DOWN_MESSAGE);
   }
   const text = await r.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 200) }; }
   if (!r.ok) {
     console.error('Supabase error', r.status, data);
-    throw new HttpError(r.status >= 500 ? 503 : 400, data?.message || 'Database error');
+    if (r.status >= 500) throw new HttpError(503, DB_DOWN_MESSAGE);
+    throw new HttpError(400, data?.message || 'Database error');
   }
   return data;
 }

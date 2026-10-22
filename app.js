@@ -692,7 +692,6 @@ function confirmLogout(extra = '') {
 // Greyed out (not a link) until someone has entered that board in this session.
 function prevBoardLink(prev, ret) {
   if (prev < 1) return '';
-  if (!canSee(prev)) return `<span class="prevlink off" aria-disabled="true" title="Shown once you’ve entered Board ${prev}">Board ${prev}s hidden</span>`;
   return playsOfBoard(prev, state.data.sessions).length
     ? `<a class="prevlink" href="#/board/${prev}/${ret}">See previous Board ${prev}s ›</a>`
     : `<span class="prevlink off" aria-disabled="true">See previous Board ${prev}s</span>`;
@@ -992,10 +991,8 @@ async function renderOthers() {
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
     <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
-    <p class="muted">Tap a board to compare every table’s result for that board. Boards you haven’t entered yet stay hidden.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => canSee(b)
-      ? `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`
-      : `<span class="bcell locked" aria-disabled="true"><span class="blbl">Board</span><strong>${b}</strong><span>Hidden till you play it</span></span>`).join('')}</div>`
+    <p class="muted">Tap a board to compare every table’s result for that board.</p>
+    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded in this session yet.</p></div>'}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();
@@ -1016,9 +1013,8 @@ async function renderBoard(r) {
     : retSess ? `<a href="#/s/${retSess.id}" class="back">‹ Return to the table</a>`
     : '<a href="#/others" class="back">‹ All boards</a>';
   $app.innerHTML = shell(retSess ? 'play' : 'others', `
-    <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))}${canSee(board) ? ` · ${plays.length} table${plays.length === 1 ? '' : 's'}` : ''}</p></header>
-    <section class="card">${!canSee(board) ? `<p class="muted">${HIDDEN_NOTE}</p>`
-      : plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
+    <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))}${` · ${plays.length} table${plays.length === 1 ? '' : 's'}`}</p></header>
+    <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
 }
 
 // =============================================================

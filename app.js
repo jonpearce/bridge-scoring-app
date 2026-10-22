@@ -1303,7 +1303,6 @@ async function renderPair(r) {
       <p class="muted">${t.played} of 4 boards · Won ${us} · Opponents ${them}${t.complete ? (us > them ? ' · <strong class="oc made">Won</strong>' : us < them ? ' · <strong class="oc down">Lost</strong>' : ' · All square') : ''}</p>
       <table class="mini"><tbody>${scored.map(({ d, sc }) => {
         const pts = side === 'NS' ? sc.nsPoints : sc.ewPoints;
-        if (!canSee(d.boardNum)) return `<tr><td>Bd ${d.boardNum}</td><td colspan="3" class="muted">Hidden until you’ve entered it</td></tr>`;
         return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${outcomeHtml(d, sc)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
       }).join('')}</tbody></table></section>`);
   }

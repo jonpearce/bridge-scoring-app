@@ -294,6 +294,27 @@ table.mini { width: 100%; border-collapse: collapse; margin-top: 8px; }
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 .toast.error { background: var(--red); }
+.toast.sleep { background: linear-gradient(135deg, #2b2f77, #5b3a8c); color: #fdf3d6; }
+
+/* ---------- database asleep ---------- */
+.card.sleep {
+  background: linear-gradient(160deg, #1f2466 0%, #3b2f84 55%, #6a3f93 100%);
+  border: none; color: #fdf3d6; text-align: center; padding: 28px 20px 22px;
+  box-shadow: 0 10px 30px rgba(43, 32, 110, .35);
+}
+.card.sleep p { font-size: 1.1rem; line-height: 1.55; margin: 10px 0 18px; }
+.card.sleep a { color: #ffd66e; font-weight: 700; }
+.card.sleep .btn { background: #ffd66e; color: #2b2466; border: none; }
+.sleep-moon { font-size: 3rem; line-height: 1; position: relative; display: inline-block; }
+.sleep-moon span {
+  position: absolute; font: 700 1rem var(--sans); color: #ffd66e; opacity: 0;
+  animation: zzz 3s infinite;
+}
+.sleep-moon span:nth-child(1) { left: 100%; top: 0; animation-delay: 0s; }
+.sleep-moon span:nth-child(2) { left: 120%; top: -14px; font-size: 1.2rem; animation-delay: 1s; }
+.sleep-moon span:nth-child(3) { left: 145%; top: -30px; font-size: 1.4rem; animation-delay: 2s; }
+@keyframes zzz { 0% { opacity: 0; transform: translateY(6px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
+@media (prefers-reduced-motion: reduce) { .sleep-moon span { animation: none; opacity: 1; } }
 
 /* ---------- small phones ---------- */
 @media (max-width: 360px) {

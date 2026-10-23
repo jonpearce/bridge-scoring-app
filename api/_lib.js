@@ -120,7 +120,7 @@ export function requireAdmin(req) {
   if (authRole(req) !== 'admin') throw new HttpError(403, 'Only the organiser can do this.');
 }
 
-const DB_DOWN_MESSAGE = 'Oops! Our database is having a snooze at the moment - sorry. Please try again later :)';
+export const DB_DOWN_MESSAGE = "Hi. I am the Flinders Bridge database. Unfortunately I am asleep right now - I'll be back later - but if you need me sooner, contact my friend Jon (jonjp@mac.com).";
 
 // ---------- Supabase REST (server-side only, secret key never leaves here) ----------
 
@@ -132,14 +132,14 @@ export async function db(path, { method = 'GET', body, prefer } = {}) {
   try {
     r = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch {
-    throw new HttpError(503, DB_DOWN_MESSAGE);
+    throw new HttpError(503, DB_DOWN_MESSAGE, { dbDown: true });
   }
   const text = await r.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { message: text.slice(0, 200) }; }
   if (!r.ok) {
     console.error('Supabase error', r.status, data);
-    if (r.status >= 500) throw new HttpError(503, DB_DOWN_MESSAGE);
+    if (r.status >= 500) throw new HttpError(503, DB_DOWN_MESSAGE, { dbDown: true });
     throw new HttpError(400, data?.message || 'Database error');
   }
   return data;

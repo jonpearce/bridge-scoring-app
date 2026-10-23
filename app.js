@@ -43,6 +43,9 @@ const sessionById = (id) => state.data?.sessions.find((s) => s.id === id);
 const gameTitle = (s) => `${esc(pairLabel(s.nsP1, s.nsP2))} <span class="v">v</span> ${esc(pairLabel(s.ewP1, s.ewP2))}`;
 
 // ---------- server calls ----------
+// Shown (in its own night-sky style) whenever the database is unavailable.
+const DB_SLEEP_MSG = "Hi. I am the Flinders Bridge database. Unfortunately I am asleep right now - I'll be back later - but if you need me sooner, contact my friend Jon (jonjp@mac.com).";
+const DB_SLEEP_EMAIL = 'jonjp@mac.com';
 class ApiError extends Error { constructor(status, msg, body) { super(msg); this.status = status; this.body = body; } }
 async function api(path, opts = {}) {
   let r;
@@ -59,6 +62,7 @@ async function api(path, opts = {}) {
   let body = {};
   try { body = await r.json(); } catch { /* not JSON */ }
   if (r.status === 401 && path !== 'login') { go('#/login'); throw new ApiError(401, body.error || 'Please enter the access code.'); }
+  if (body.dbDown) throw new ApiError(r.status, DB_SLEEP_MSG, body);
   if (!r.ok) throw new ApiError(r.status, body.error || 'Something went wrong. Please try again.', body);
   return body;
 }
@@ -91,10 +95,11 @@ let toastTimer;
 function toast(msg, kind = 'ok') {
   let t = document.getElementById('toast');
   if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  if (msg === DB_SLEEP_MSG) kind = 'sleep';
   t.className = `toast show ${kind}`;
   t.textContent = msg;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), kind === 'error' ? 5000 : 2600);
+  toastTimer = setTimeout(() => t.classList.remove('show'), kind === 'sleep' ? 10000 : kind === 'error' ? 5000 : 2600);
 }
 
 // ---------- routing ----------
@@ -141,7 +146,15 @@ function shell(tab, inner) {
     ${t('play', 'Play', '♠')}${t('others', 'Other results', '♦')}${t('day', 'Day summary', '♣')}
   </nav>`;
 }
-const errorBlock = (msg) => `<div class="card error"><p>${esc(msg)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`;
+const errorBlock = (msg) => msg === DB_SLEEP_MSG ? sleepBlock() : `<div class="card error"><p>${esc(msg)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`;
+const sleepBlock = () => {
+  const [before, after] = esc(DB_SLEEP_MSG).split(DB_SLEEP_EMAIL);
+  return `<div class="card sleep" role="alert">
+    <div class="sleep-moon" aria-hidden="true">🌙<span>z</span><span>z</span><span>z</span></div>
+    <p>${before}<a href="mailto:${DB_SLEEP_EMAIL}">${DB_SLEEP_EMAIL}</a>${after}</p>
+    <button class="btn" onclick="location.reload()">Try again</button>
+  </div>`;
+};
 
 // ---------- shared score display: only the pair that scores gets points ----------
 function scorePair(nsScore) {

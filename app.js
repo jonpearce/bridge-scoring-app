@@ -226,7 +226,7 @@ function renderPlay() {
     : '<section class="card"><p class="muted">No tables have started yet in this session.</p></section>';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1>${sessionPicker()}</header>
-    <a class="btn primary big block" href="#/new">Set up a new table…</a>
+    <a class="btn primary big block" href="#/new">Set up a new round…</a>
     ${joinCard}
     ${restartButton()}
     ${logoutButton()}`);
@@ -288,7 +288,7 @@ function renderNew(r) {
         us1: prefs.names?.[0] || '', us2: prefs.names?.[1] || '', them1: '', them2: '' };
 
   $app.innerHTML = shell('play', `
-    <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Change names' : 'Set up a new table'}</h1></header>
+    <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Change names' : 'Set up a new round'}</h1></header>
     <form id="newForm" class="stack" autocomplete="off">
       <section class="card stack">
         <span class="lbl">Your pair is sitting</span>
@@ -586,8 +586,7 @@ function renderGame(r) {
     <p class="board-range">Boards <strong>${s.startBoard}–${s.startBoard + 3}</strong> <button class="btn small swap" id="changeBoards" type="button">Change</button></p>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done && done < 4 ? totalsCard(t) : ''}
-    ${done === 4 ? `<p class="done-note">All 4 boards done and saved.</p>${nextBtn}
-    <button class="btn ghost block" id="showDone" type="button" aria-expanded="false">Need to correct a board? Show the 4 boards</button>` : ''}
+    ${done === 4 ? nextBtn : ''}
     <div id="doneBoards"${done === 4 ? ' hidden' : ''}>
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
@@ -608,12 +607,12 @@ function renderGame(r) {
   $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
     // In-app question (pop-up dialogs are blocked in some browsers)
     sheet((done === 4 ? `<h2>Play the next 4 boards</h2>
-      <p>Your results at this table are saved. You probably want to set up the next game now.</p>
-      <button class="btn primary big block" id="leaveYes">Set up the next game (Boards ${nb}–${nb + 3})</button>
+      <p>Your results at this table are saved. You probably want to set up the next round now.</p>
+      <button class="btn primary big block" id="leaveYes">Set up the next round (Boards ${nb}–${nb + 3})</button>
       <button class="btn big block" id="leaveJoin">Join a table already started</button>`
       : `<h2>Leave this table?</h2>
       <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this table from the Play screen.</p>
-      <button class="btn primary big block" id="leaveYes">Set up a new table</button>
+      <button class="btn primary big block" id="leaveYes">Set up a new round</button>
       <button class="btn big block" id="leaveJoin">Join a different table</button>`), (root) => {
       root.querySelector('#leaveYes').onclick = () => { closeSheet(); startNew(); };
       root.querySelector('#leaveJoin').onclick = () => {
@@ -624,12 +623,6 @@ function renderGame(r) {
       };
     });
   }));
-  document.getElementById('showDone')?.addEventListener('click', (ev) => {
-    const box = document.getElementById('doneBoards'), open = box.hidden;
-    box.hidden = !open;
-    ev.currentTarget.setAttribute('aria-expanded', String(open));
-    ev.currentTarget.textContent = open ? 'Hide the 4 boards' : 'Need to correct a board? Show the 4 boards';
-  });
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
   document.getElementById('swapSide')?.addEventListener('click', () => {

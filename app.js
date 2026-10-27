@@ -750,7 +750,7 @@ function renderEntry(r) {
     </header>
     <div id="entryNote">${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}</div>
     <div id="entry"></div>
-    <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${othersOnBoard(board, s.id)}</div></section>
+    <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${entryOthers(s, n)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   state.entry.draftKey = draftKey;
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, () => render());
@@ -949,6 +949,13 @@ function playsOfBoard(board, sessions) {
   const out = [];
   for (const s of sessions) for (const d of s.deals) if (d.boardNum === board) out.push({ s, d, sc: scoreDeal(d, s.firstDealer) });
   return out;
+}
+
+// Result-entry screen: other tables stay hidden until THIS table has saved this board
+// (applies to everyone, organiser included). Organiser still sees all on Other results.
+function entryOthers(s, n) {
+  if (!s.deals.some((d) => d.dealNo === n)) return `<p class="muted">${HIDDEN_NOTE}</p>`;
+  return othersOnBoard(boardNumberFor(n, s.startBoard), s.id);
 }
 
 function othersOnBoard(board, mySessionId) {
@@ -1364,7 +1371,7 @@ setInterval(async () => {
     if (r.name === 'deal') {
       const s = sessionById(r.a);
       const o = document.getElementById('others');
-      if (s && o) o.innerHTML = othersOnBoard(boardNumberFor(Number(r.b), s.startBoard), s.id);
+      if (s && o) o.innerHTML = state.entry?.justSaved ? othersOnBoard(boardNumberFor(Number(r.b), s.startBoard), s.id) : entryOthers(s, Number(r.b));
     } else {
       const y = window.scrollY; await render(); window.scrollTo(0, y);
     }

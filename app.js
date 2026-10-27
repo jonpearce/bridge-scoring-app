@@ -762,15 +762,7 @@ function drawEntry() {
   const s = sessionById(state.entry.sessionId);
   const box = document.getElementById('entry');
   const btn = (attr, val, label, on, cls = '') => `<button type="button" class="key ${cls} ${on ? 'on' : ''}" data-${attr}="${val}" aria-pressed="${on}">${label}</button>`;
-  const changed = e.vulNs !== def.ns || e.vulEw !== def.ew;
-  const vulCard = vulLocked() ? `<section class="card keys vul-locked">
-      <h2 class="kh">Vulnerability</h2>
-      <p class="vl-line">${vulBadge({ ns: e.vulNs, ew: e.vulEw })}<span class="muted small">Set by the organiser</span></p>
-    </section>` : `<section class="card keys">
-      <h2 class="kh">Who is vulnerable?</h2>
-      ${vulChoiceButtons(vulKey({ ns: e.vulNs, ew: e.vulEw }))}
-      ${changed ? `<p class="warn oneline">Not the usual (${vulnerabilityText(def).replace('vulnerable', 'vul')}). <button type="button" class="link" data-act="vulreset">(Undo)</button></p>` : ''}
-    </section>`;
+  // Vulnerability is set on the table (Play) screen, so it isn't shown here.
   if (e.passedOut) {
     box.innerHTML = `<section class="card center"><p class="passed">Passed out</p><p class="muted">No contract. Nobody scores on this board.</p>
       <button class="btn" data-act="unpass">Undo, it was played</button></section>`;
@@ -779,7 +771,6 @@ function drawEntry() {
     const tricks = need != null ? need + e.diff : null;
     const res = need == null ? '' : e.diff === 0 ? 'Made exactly' : e.diff > 0 ? `Made +${e.diff}` : `Down ${-e.diff}`;
     box.innerHTML = `
-      ${vulCard}
       <section class="card keys">
         <h2 class="kh">Contract</h2>
         <div class="grid seven">${[1, 2, 3, 4, 5, 6, 7].map((l) => btn('level', l, l, e.level === l)).join('')}</div>

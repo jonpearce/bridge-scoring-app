@@ -568,3 +568,6 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .restart { margin-top: 18px; }
 .restart + .logout { margin-top: 8px; }
 .sheet ul.small { margin: 0 0 12px; padding-left: 20px; line-height: 1.45; }
+
+/* Organiser-only: correct a board at a finished table */
+.org-correct { border: 2px dashed #8a6d1f; color: #6b5414; background: #fff8e6; font-weight: 700; }

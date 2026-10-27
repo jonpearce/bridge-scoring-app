@@ -587,6 +587,7 @@ function renderGame(r) {
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${done && done < 4 ? totalsCard(t) : ''}
     ${done === 4 ? nextBtn : ''}
+    ${done === 4 && state.admin ? '<button class="btn block org-correct" id="showDone" type="button" aria-expanded="false">Organiser: correct a board ›</button>' : ''}
     <div id="doneBoards"${done === 4 ? ' hidden' : ''}>
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
@@ -623,6 +624,13 @@ function renderGame(r) {
       };
     });
   }));
+  // Organiser only: open the finished table's 4 boards so one can be corrected.
+  document.getElementById('showDone')?.addEventListener('click', (ev) => {
+    const box = document.getElementById('doneBoards'), open = box.hidden;
+    box.hidden = !open;
+    ev.currentTarget.setAttribute('aria-expanded', String(open));
+    ev.currentTarget.textContent = open ? 'Organiser: hide the 4 boards' : 'Organiser: correct a board ›';
+  });
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
   document.getElementById('swapSide')?.addEventListener('click', () => {

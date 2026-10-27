@@ -228,6 +228,7 @@ function renderPlay() {
     <header class="top"><h1>Play</h1>${sessionPicker()}</header>
     <a class="btn primary big block" href="#/new">Set up a new table…</a>
     ${joinCard}
+    ${restartButton()}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();
   $app.querySelectorAll('[data-join]').forEach((b) => (b.onclick = () => chooseSide(b.dataset.join)));
@@ -595,6 +596,7 @@ function renderGame(r) {
       ${done === 4 ? '' : '<button class="btn ghost block" data-newgame>Leave this table</button>'}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
+      ${restartButton()}
       ${logoutButton()}
     </div>`);
 
@@ -1000,7 +1002,34 @@ function wireSessionPicker() {
   };
 }
 const logoutButton = () => '<button class="btn ghost block logout" id="logout">Log out</button>';
-const wireLogout = () => document.getElementById('logout')?.addEventListener('click', () => confirmLogout());
+const wireLogout = () => {
+  document.getElementById('logout')?.addEventListener('click', () => confirmLogout());
+  document.getElementById('restart')?.addEventListener('click', () => confirmRestart());
+};
+// "Start again": puts this phone back to a known state. Saved results and the login are kept.
+const restartButton = () => '<button class="btn ghost block restart" id="restart" type="button">↺ Start again on this phone</button>';
+function confirmRestart() {
+  sheet(`<h2>Start again on this phone?</h2>
+    <p>Use this if the app is confusing or showing the wrong table.</p>
+    <ul class="small">
+      <li><strong>Kept:</strong> every saved result, and you stay logged in.</li>
+      <li><strong>Forgotten on this phone:</strong> which table you’re at, your names, unsaved half-entered boards, and any earlier session you picked.</li>
+    </ul>
+    <p>You’ll go to the Play screen, where you can set up a table or tap your table to join it again.</p>
+    <button class="btn primary big block" id="restartYes">Yes, start again</button>`, (root) => {
+    root.querySelector('#restartYes').onclick = async () => {
+      closeSheet();
+      try {
+        Object.keys(localStorage).filter((k) => k.startsWith('chi:'))
+          .forEach((k) => localStorage.removeItem(k));
+      } catch { /* private mode */ }
+      state.entry = null; state.scrollToNext = false;
+      toast('Started again. Saved results are safe.');
+      try { await loadDay(); } catch { /* render shows any error */ }
+      go('#/play');
+    };
+  });
+}
 
 async function renderOthers() {
   const data = state.data;

@@ -563,3 +563,8 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
   border: 2px solid var(--green, #14402e); color: var(--green, #14402e); font-weight: 700; font-size: 1.05rem; text-decoration: none; background: #fff; }
 .bstep.off { visibility: hidden; }
 @media (prefers-color-scheme: dark) { .bstep { background: transparent; } }
+
+/* Start again on this phone */
+.restart { margin-top: 18px; }
+.restart + .logout { margin-top: 8px; }
+.sheet ul.small { margin: 0 0 12px; padding-left: 20px; line-height: 1.45; }

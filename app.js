@@ -608,8 +608,8 @@ function renderGame(r) {
   $app.querySelectorAll('[data-newgame]').forEach((b) => (b.onclick = () => {
     // In-app question (pop-up dialogs are blocked in some browsers)
     sheet((done === 4 ? `<h2>Play the next 4 boards</h2>
-      <p>Your results at this table are saved. If someone at your next table has already set it up, join it instead.</p>
-      <button class="btn primary big block" id="leaveYes">Set up the next table (Boards ${nb}–${nb + 3})</button>
+      <p>Your results at this table are saved. You probably want to set up the next game now.</p>
+      <button class="btn primary big block" id="leaveYes">Set up the next game (Boards ${nb}–${nb + 3})</button>
       <button class="btn big block" id="leaveJoin">Join a table already started</button>`
       : `<h2>Leave this table?</h2>
       <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this table from the Play screen.</p>
@@ -765,7 +765,7 @@ function nextAfterSave() {
   const nxt = [1, 2, 3, 4].find((k) => !s.deals.some((d) => d.dealNo === k));
   return nxt
     ? { label: `Next: Board ${boardNumberFor(nxt, s.startBoard)} ›`, go: () => go(`#/deal/${s.id}/${nxt}`) }
-    : { label: 'Back to the table ›', go: () => { state.scrollToNext = true; go(`#/s/${s.id}`); } };
+    : { label: 'On to the next round ›', go: () => { state.scrollToNext = true; go(`#/s/${s.id}`); } };
 }
 
 function drawEntry() {

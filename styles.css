@@ -556,3 +556,10 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .card.board.res-down { border-left: 6px solid #c8372d; }
 .play.res-made { border-left: 5px solid #2e9a55; padding-left: 10px; }
 .play.res-down { border-left: 5px solid #c8372d; padding-left: 10px; }
+
+/* Board results: step to the previous / next board */
+.boardstep { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0 10px; }
+.bstep { display: inline-flex; align-items: center; min-height: 48px; padding: 0 16px; border-radius: 12px;
+  border: 2px solid var(--green, #14402e); color: var(--green, #14402e); font-weight: 700; font-size: 1.05rem; text-decoration: none; background: #fff; }
+.bstep.off { visibility: hidden; }
+@media (prefers-color-scheme: dark) { .bstep { background: transparent; } }

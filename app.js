@@ -584,12 +584,15 @@ function renderGame(r) {
     </header>
     <p class="board-range">Boards <strong>${s.startBoard}–${s.startBoard + 3}</strong> <button class="btn small swap" id="changeBoards" type="button">Change</button></p>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
-    ${done ? totalsCard(t) : ''}
-    ${done === 4 ? `<p class="done-note">All 4 boards done — results below.</p>${nextBtn}` : ''}
+    ${done && done < 4 ? totalsCard(t) : ''}
+    ${done === 4 ? `<p class="done-note">All 4 boards done and saved.</p>${nextBtn}
+    <button class="btn ghost block" id="showDone" type="button" aria-expanded="false">Need to correct a board? Show the 4 boards</button>` : ''}
+    <div id="doneBoards"${done === 4 ? ' hidden' : ''}>
     <div class="boards">${rows.map(card).join('')}</div>
     <div class="wide-only card"><table class="results"><thead><tr><th>Board</th><th>Vul</th><th>Bid</th><th>Winner</th><th>Lead</th><th>Result</th><th class="num">N/S</th><th class="num">E/W</th><th></th></tr></thead><tbody>${tableRows}</tbody></table></div>
+    </div>
     <div class="stack foot">
-      ${done === 4 ? nextBtn : '<button class="btn ghost block" data-newgame>Leave this table</button>'}
+      ${done === 4 ? '' : '<button class="btn ghost block" data-newgame>Leave this table</button>'}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
       <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
       ${logoutButton()}
@@ -619,6 +622,12 @@ function renderGame(r) {
       };
     });
   }));
+  document.getElementById('showDone')?.addEventListener('click', (ev) => {
+    const box = document.getElementById('doneBoards'), open = box.hidden;
+    box.hidden = !open;
+    ev.currentTarget.setAttribute('aria-expanded', String(open));
+    ev.currentTarget.textContent = open ? 'Hide the 4 boards' : 'Need to correct a board? Show the 4 boards';
+  });
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
   document.getElementById('swapSide')?.addEventListener('click', () => {
@@ -1016,9 +1025,20 @@ async function renderBoard(r) {
     ? `<a href="#/deal/${ret[1]}/${ret[2]}" class="back">‹ Return to Board ${boardNumberFor(Number(ret[2]), retSess.startBoard)}</a>`
     : retSess ? `<a href="#/s/${retSess.id}" class="back">‹ Return to the table</a>`
     : '<a href="#/others" class="back">‹ All boards</a>';
+  // Arrows to step through every board that has a result this session (keeps the same return link).
+  const all = [...new Set(data.sessions.flatMap((x) => x.deals.map((d) => d.boardNum)))].sort((a, b) => a - b);
+  const prevB = [...all].reverse().find((b) => b < board), nextB = all.find((b) => b > board);
+  const suffix = r.b ? `/${r.b}` : '';
+  const arrow = (b, label, cls) => b != null
+    ? `<a class="bstep ${cls}" href="#/board/${b}${suffix}" aria-label="Board ${b}">${label}</a>`
+    : `<span class="bstep ${cls} off" aria-hidden="true">${label}</span>`;
+  const stepper = all.length > 1 || (all.length && !all.includes(board)) ? `<nav class="boardstep" aria-label="Step through boards">
+      ${arrow(prevB, `‹ Board ${prevB ?? ''}`, 'prev')}<span class="muted small">${all.includes(board) ? `${all.indexOf(board) + 1} of ${all.length}` : ''}</span>${arrow(nextB, `Board ${nextB ?? ''} ›`, 'next')}</nav>` : '';
   $app.innerHTML = shell(retSess ? 'play' : 'others', `
     <header class="top">${back}<h1>Board ${board}</h1><p class="muted">${esc(fmtStart(data.event))}${` · ${plays.length} table${plays.length === 1 ? '' : 's'}`}</p></header>
-    <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>`);
+    ${stepper}
+    <section class="card">${plays.length ? plays.map((p) => playCard(p, p.s.id === m?.sessionId)).join('') : '<p class="muted">Nobody has recorded this board yet.</p>'}</section>
+    ${plays.length > 2 ? stepper : ''}`);
 }
 
 // =============================================================

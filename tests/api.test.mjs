@@ -388,3 +388,56 @@ test('empty sessions leave the history; the newest is kept', async () => {
   assert.ok(T.chi_events.every((e) => e.id === next || T.chi_sessions.some((s) => s.event_id === e.id)));
   await call(login, 'POST', { code: 'golf' });
 });
+
+// ---------- Rubber bridge switch (28 Oct 2026) ----------
+test('scoring switch: Chicago by default; only the organiser can change it', async () => {
+  await call(login, 'POST', { code: 'golf' });
+  assert.equal((await call(sessions, 'GET')).body.settings.scoringMode, 'chicago');
+  assert.equal((await call(admin, 'POST', { action: 'setScoringMode', mode: 'rubber' })).status, 403);
+  // Every table so far is Chicago, and creating one under Chicago writes no scoring field.
+  assert.ok((await call(sessions, 'GET')).body.sessions.every((s) => s.scoring === 'chicago'));
+  assert.ok(T.chi_sessions.every((r) => r.scoring === undefined));
+});
+
+test('rubber: new tables only; vulnerability and scores come from games won', async () => {
+  await call(login, 'POST', { code: 'Boss' });
+  const before = (await call(sessions, 'GET')).body;
+  const chicagoIds = before.sessions.map((s) => s.id);
+  assert.equal((await call(admin, 'POST', { action: 'setScoringMode', mode: 'rubber' })).status, 200);
+  const after = (await call(sessions, 'GET')).body;
+  assert.equal(after.settings.scoringMode, 'rubber');
+  assert.ok(after.sessions.filter((s) => chicagoIds.includes(s.id)).every((s) => s.scoring === 'chicago'));   // old tables unchanged
+
+  const t = await call(sessions, 'POST', { ...newTable, eventId: after.event.id, nsP1: 'Rob', nsP2: 'Sue', ewP1: 'Tim', ewP2: 'Val', clientToken: crypto.randomUUID() });
+  assert.equal(t.body.session.scoring, 'rubber');
+  const rid = t.body.session.id;
+  // Board 1: 2♠ by N, 9 tricks → 60 below + 30 above = 90, no part-score bonus. Phone's vul ignored.
+  let r = await call(deal, 'PUT', { sessionId: rid, dealNo: 1, level: 2, strain: 'S', declarer: 'N', tricks: 9, vulNs: true, vulEw: true });
+  assert.equal(r.body.deal.nsScore, 90);
+  assert.equal(r.body.deal.vulNs, false);
+  // Board 2: 2♥ by S made → 60 below, 120 total = game to N/S
+  r = await call(deal, 'PUT', { sessionId: rid, dealNo: 2, level: 2, strain: 'H', declarer: 'S', tricks: 8 });
+  assert.equal(r.body.deal.nsScore, 60);
+  // Board 3: N/S now vulnerable. 3NT by N made → rubber 2–0: 100 + 700
+  r = await call(deal, 'PUT', { sessionId: rid, dealNo: 3, level: 3, strain: 'NT', declarer: 'N', tricks: 9 });
+  assert.equal(r.body.deal.vulNs, true);
+  assert.equal(r.body.deal.nsScore, 800);
+  // Correct board 1 to 1♠ made exactly (30 below): board 2 no longer makes game,
+  // so board 3 is played non-vulnerable and makes the first game, not the rubber.
+  const cur = T.chi_deals.find((d) => d.session_id === rid && d.deal_no === 1);
+  r = await call(deal, 'PUT', { sessionId: rid, dealNo: 1, level: 1, strain: 'S', declarer: 'N', tricks: 7, expectedUpdatedAt: cur.updated_at });
+  assert.equal(r.body.deal.nsScore, 30);
+  const b3 = T.chi_deals.find((d) => d.session_id === rid && d.deal_no === 3);
+  assert.equal(b3.ns_score, 100);
+  assert.equal(b3.vul_ns, false);
+
+  // Switching back: tables already set up keep their own scoring.
+  assert.equal((await call(admin, 'POST', { action: 'setScoringMode', mode: 'chicago' })).status, 200);
+  const back = (await call(sessions, 'GET')).body;
+  assert.equal(back.settings.scoringMode, 'chicago');
+  assert.equal(back.sessions.find((s) => s.id === rid).scoring, 'rubber');
+  assert.equal(T.chi_settings.some((x) => x.key === 'scoring_mode'), false);
+  const c = await call(sessions, 'POST', { ...newTable, eventId: back.event.id, nsP1: 'Wyn', nsP2: 'Xia', ewP1: 'Yan', ewP2: 'Zed', clientToken: crypto.randomUUID() });
+  assert.equal(c.body.session.scoring, 'chicago');
+  await call(login, 'POST', { code: 'golf' });
+});

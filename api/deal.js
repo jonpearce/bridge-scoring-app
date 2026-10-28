@@ -1,5 +1,6 @@
 import { handler, send, readJson, requireAuth, db, HttpError, toDeal, getSettings } from './_lib.js';
 import { scoreDeal, validateDeal, boardNumberFor, vulnerabilityFor, SCORING_VERSION } from '../lib/chicago.js';
+import { scoreRubberTable } from '../lib/rubber.js';
 
 // PUT /api/deal
 // { sessionId, dealNo, passedOut, level, strain, doubled, declarer, tricks, leadSuit, leadRank, vulNs, vulEw, expectedUpdatedAt }
@@ -14,7 +15,7 @@ export default handler({
     const dealNo = Number(b.dealNo);
     if (![1, 2, 3, 4].includes(dealNo)) throw new HttpError(400, 'Deal must be 1–4');
 
-    const sess = (await db(`chi_sessions?id=eq.${b.sessionId}&select=id,start_board,first_dealer`))[0];
+    const sess = (await db(`chi_sessions?id=eq.${b.sessionId}&select=id,start_board,first_dealer,scoring`))[0];
     if (!sess) throw new HttpError(404, 'Session not found');
 
     const deal = b.passedOut
@@ -28,9 +29,18 @@ export default handler({
     // Vulnerability: as chosen on the scoring screen, else the club default.
     // When the organiser has locked it, nobody can change it: a new board gets
     // the default, a correction keeps whatever the board already had.
+    const rubber = sess.scoring === 'rubber';
+    let table = null, othersAtTable = [];
     const def = vulnerabilityFor(dealNo, sess.first_dealer);
-    const { vulLocked } = await getSettings();
-    if (vulLocked) {
+    const { vulLocked } = rubber ? {} : await getSettings();
+    if (rubber) {
+      // Rubber: vulnerability comes from the games already won at this table.
+      if (validateDeal(deal)) throw new HttpError(400, validateDeal(deal));
+      othersAtTable = (await db(`chi_deals?session_id=eq.${sess.id}&select=*`)).map(toDeal).filter((d) => d.dealNo !== dealNo);
+      table = scoreRubberTable([...othersAtTable, deal], sess.first_dealer);
+      deal.vulNs = table.vulBefore[dealNo].ns;
+      deal.vulEw = table.vulBefore[dealNo].ew;
+    } else if (vulLocked) {
       const was = (await db(`chi_deals?session_id=eq.${sess.id}&deal_no=eq.${dealNo}&select=vul_ns,vul_ew`))[0];
       deal.vulNs = typeof was?.vul_ns === 'boolean' ? was.vul_ns : def.ns;
       deal.vulEw = typeof was?.vul_ew === 'boolean' ? was.vul_ew : def.ew;
@@ -40,7 +50,7 @@ export default handler({
     }
     const err = validateDeal(deal);
     if (err) throw new HttpError(400, err);
-    const scored = scoreDeal(deal, sess.first_dealer);
+    const scored = rubber ? table.deals[dealNo] : scoreDeal(deal, sess.first_dealer);
 
     const row = {
       session_id: sess.id,
@@ -76,6 +86,17 @@ export default handler({
       throw new HttpError(409, 'This board was just saved or changed on another phone. Please check it.', {
         current: current ? toDeal(current) : null,
       });
+    }
+    // Rubber: this board can change the later boards' vulnerability and scores.
+    if (rubber) {
+      for (const o of othersAtTable) {
+        const sc = table.deals[o.dealNo], v = table.vulBefore[o.dealNo];
+        if (sc && (sc.nsScore !== o.nsScore || v.ns !== o.vulNs || v.ew !== o.vulEw)) {
+          await db(`chi_deals?session_id=eq.${sess.id}&deal_no=eq.${o.dealNo}`, {
+            method: 'PATCH', body: { ns_score: sc.nsScore, vul_ns: v.ns, vul_ew: v.ew },
+          });
+        }
+      }
     }
     send(res, 200, { deal: toDeal(saved[0]) });
   },

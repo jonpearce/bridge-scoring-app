@@ -64,6 +64,15 @@ export default handler({
       return send(res, 200, { vulLocked: b.locked });
     }
 
+    if (b.action === 'setScoringMode') {
+      if (!['chicago', 'rubber'].includes(b.mode)) throw new HttpError(400, 'Missing setting');
+      await db('chi_settings?key=eq.scoring_mode', { method: 'DELETE' });
+      if (b.mode === 'rubber') {
+        await db('chi_settings', { method: 'POST', body: { key: 'scoring_mode', value: 'rubber', updated_at: new Date().toISOString() } });
+      }
+      return send(res, 200, { scoringMode: b.mode });
+    }
+
     if (b.action === 'renameName') {
       const from = cleanName(b.from), to = cleanName(b.to);
       if (!from || !to) throw new HttpError(400, 'Please type the correct spelling.');

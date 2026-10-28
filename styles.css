@@ -571,3 +571,12 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 
 /* Organiser-only: correct a board at a finished table */
 .org-correct { border: 2px dashed #8a6d1f; color: #6b5414; background: #fff8e6; font-weight: 700; }
+
+/* Rubber bridge tables (28 Oct 2026) */
+.scoring-tag { display: inline-block; margin: 2px 0 6px; padding: 4px 10px; border-radius: 999px; background: #e8eefc; color: #23408e; font-weight: 700; font-size: .9rem; }
+.rubber-status { display: grid; gap: 6px; }
+.rubber-status .kh { margin-bottom: 2px; }
+.rubber-status .vb { font-size: .8rem; padding: 2px 8px; }
+.rubber-status p { margin: 4px 0 0; }
+.rb-line { margin: 6px 0 0; color: #4a4a4a; }
+.rb-extra { background: #fff8e6; border-radius: 8px; padding: 6px 8px; }

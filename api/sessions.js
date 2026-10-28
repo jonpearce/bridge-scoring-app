@@ -4,7 +4,7 @@ import {
 } from './_lib.js';
 import { SEATS, boardNumberFor } from '../lib/chicago.js';
 
-const SELECT = 'id,location,start_board,first_dealer,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
+const SELECT = 'id,location,start_board,first_dealer,scoring,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
 // GET   /api/sessions?event=ID  → every table (with boards) in that playing session
 //                                 (newest session if no ID), plus the list of sessions
@@ -46,6 +46,10 @@ export default handler({
     const row = sessionFields(b, true);
     const token = /^[0-9a-f-]{36}$/i.test(b.clientToken || '') ? b.clientToken : null;
     const ev = await resolveEvent(b.eventId);
+    // How this table is scored is fixed now, from the organiser's switch.
+    // Only written when Rubber, so Chicago tables are created exactly as before.
+    const { scoringMode } = await getSettings();
+    if (scoringMode === 'rubber') row.scoring = 'rubber';
     const made = await db('chi_sessions?on_conflict=client_token&select=' + SELECT, {
       method: 'POST',
       body: { ...row, event_id: ev.id, client_token: token },

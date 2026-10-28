@@ -13,6 +13,21 @@ import {
   contractText, outcomeText, strainSymbol, seatName, sideOf, sideName, pairKey, pairLabel,
   LEAD_RANKS, SUITS,
 } from './lib/chicago.js';
+import { scoreRubberTable, rubberTotals } from './lib/rubber.js';
+
+// ---------- rubber bridge tables (organiser switch, 28 Oct 2026) ----------
+// A table's scoring is fixed when it is set up. Chicago tables never use anything here.
+const isRubber = (s) => s?.scoring === 'rubber';
+// Score a rubber table; `draft` (a deal) stands in for that board — used for the live preview.
+const rubberTable = (s, draft = null) => scoreRubberTable(
+  draft ? s.deals.filter((d) => d.dealNo !== draft.dealNo).concat(draft) : s.deals, s.firstDealer);
+// The scored version of one saved deal at table s, whichever way the table is scored.
+const scoredAt = (s, d) => (isRubber(s) ? rubberTable(s).deals[d.dealNo] : scoreDeal(d, s.firstDealer));
+// Day-summary totals: only passed when some table is rubber, so Chicago-only days are unchanged.
+const dayTotalsFn = (sessions) => (sessions.some(isRubber)
+  ? (s) => (isRubber(s) ? rubberTotals(rubberTable(s)) : sessionTotals(s.deals.map((d) => scoreDeal(d, s.firstDealer))))
+  : null);
+const scoringMode = () => (state.data?.settings?.scoringMode === 'rubber' ? 'rubber' : 'chicago');
 
 const $app = document.getElementById('app');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -289,6 +304,7 @@ function renderNew(r) {
 
   $app.innerHTML = shell('play', `
     <header class="top"><a href="${editing ? `#/s/${editing.id}` : '#/play'}" class="back">‹ Back</a><h1>${editing ? 'Change names' : 'Set up a new round'}</h1></header>
+    ${!editing && scoringMode() === 'rubber' ? '<p class="scoring-tag">This table will use rubber bridge scoring</p>' : ''}
     <form id="newForm" class="stack" autocomplete="off">
       <section class="card stack">
         <span class="lbl">Your pair is sitting</span>
@@ -519,6 +535,13 @@ function upsertSession(s) {
 //  Game — four-board overview
 // =============================================================
 function dealsFor(s) {
+  if (isRubber(s)) {
+    const t = rubberTable(s);
+    return [1, 2, 3, 4].map((n) => {
+      const d = s.deals.find((x) => x.dealNo === n);
+      return { n, board: boardNumberFor(n, s.startBoard), vul: t.vulBefore[n], dealer: dealerFor(n, s.firstDealer), d, scored: d ? t.deals[n] : null };
+    });
+  }
   return [1, 2, 3, 4].map((n) => {
     const d = s.deals.find((x) => x.dealNo === n);
     const draft = d || vulLocked() ? null : store.get(`draft:${s.id}:${n}`);
@@ -541,13 +564,14 @@ function renderGame(r) {
   const isMine = m?.sessionId === s.id;
   const rows = dealsFor(s);
   const done = rows.filter((x) => x.d).length;
-  const t = sessionTotals(rows.filter((x) => x.scored).map((x) => x.scored));
+  const rub = isRubber(s) ? rubberTable(s) : null;
+  const t = rub ? rubberTotals(rub) : sessionTotals(rows.filter((x) => x.scored).map((x) => x.scored));
   const next = rows.find((x) => !x.d);
 
   const card = (x) => {
     const title = `<span class="bnum">Board ${x.board}${x.d ? ' <span class="played">– played</span>' : ''}</span>`;
     const head = `<div class="bhead">${x.d ? title : `<div class="btitle">${title}${prevBoardLink(x.board - 1, `t:${s.id}`)}</div>`}
-      <span class="vultog">${vulLocked() ? vulBadge(x.vul) : ['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
+      <span class="vultog">${rub || vulLocked() ? vulBadge(x.vul) : ['ns', 'ew'].map((k) => `<button type="button" class="vb tap ${x.vul[k] ? 'on' : ''}" data-vultog="${x.n}:${k}" aria-pressed="${x.vul[k]}" aria-label="Board ${x.board}: ${short(k.toUpperCase())} ${x.vul[k] ? 'vulnerable' : 'not vulnerable'}. Tap to change">${short(k.toUpperCase())} ${x.vul[k] ? 'Vul' : 'Not vul'}</button>`).join('')}</span></div>`;
     if (!x.d) {
       const isNext = next && next.n === x.n;
       return `<div class="card board todo ${isNext ? 'next' : ''}">${head}
@@ -562,6 +586,7 @@ function renderGame(r) {
         <div><dt>Lead</dt><dd>${leadHtml(x.d)}</dd></div>`}
       </dl>
       <div class="scores">${scorePair(sc.nsScore)}</div>
+      ${rub ? rubberLine(sc) : ''}
       <a class="btn block correct" href="#/deal/${s.id}/${x.n}">Correct this board ›</a></div>`;
   };
 
@@ -583,9 +608,11 @@ function renderGame(r) {
       <p class="pairs"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
       ${isMine ? `<p class="you-are">You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong> <button class="btn small swap" id="swapSide" type="button">Swap</button></p>` : ''}
     </header>
+    ${rub ? '<p class="scoring-tag">Rubber bridge scoring</p>' : ''}
     <p class="board-range">Boards <strong>${s.startBoard}–${s.startBoard + 3}</strong> <button class="btn small swap" id="changeBoards" type="button">Change</button></p>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
-    ${done && done < 4 ? totalsCard(t) : ''}
+    ${rub && !done ? rubberStatus(rub) : ''}
+    ${done && done < 4 ? totalsCard(t, rub) : ''}
     ${done === 4 ? nextBtn : ''}
     ${done === 4 && state.admin ? '<button class="btn block org-correct" id="showDone" type="button" aria-expanded="false">Organiser: correct a board ›</button>' : ''}
     <div id="doneBoards"${done === 4 ? ' hidden' : ''}>
@@ -655,6 +682,7 @@ function renderGame(r) {
 async function rerenderKeepScroll() { const y = window.scrollY; await render(); window.scrollTo(0, y); }
 
 async function setVul(s, n, v) {
+  if (isRubber(s)) return;   // rubber: vulnerability comes from the games won
   if (vulLocked()) { toast('The organiser has locked the vulnerability.', 'error'); return; }
   const d = s.deals.find((x) => x.dealNo === n);
   const draftKey = `draft:${s.id}:${n}`;
@@ -685,14 +713,33 @@ async function setVul(s, n, v) {
 const madeClass = (d) => (!d || d.passedOut ? '' : d.tricks >= d.level + 6 ? 'made' : 'down');
 const outcomeHtml = (d, sc) => `<span class="oc ${madeClass(d)}">${esc(sc.outcome)}</span>`;
 
-function totalsCard(t) {
+function totalsCard(t, rub = null) {
   const verdict = !t.complete ? 'So far' : t.net === 0 ? 'Result' : 'Winners';
   const line = t.net === 0 ? 'All square' : `${short(t.leader)} by ${t.margin}`;
   return `<section class="card totals ${t.complete ? 'final' : ''}">
     <div class="tot"><span class="tag ns">N/S</span><strong>${t.nsPoints}</strong></div>
     <div class="tot"><span class="tag ew">E/W</span><strong>${t.ewPoints}</strong></div>
     <div class="net"><span>${verdict}</span><strong>${line}</strong></div>
-  </section>`;
+  </section>${rub ? rubberStatus(rub) : ''}`;
+}
+
+// Rubber tables: where the rubber stands (games, part-scores, who is vulnerable).
+function rubberStatus(rub) {
+  const { games, below, rubberNo } = rub.state;
+  const side = (k, tag) => `<div><span class="tag ${tag}">${tag === 'ns' ? 'N/S' : 'E/W'}</span>
+    ${games[k] ? '<strong>1 game</strong> · <span class="vb on">Vul</span>' : '<span>No game</span> · <span class="vb">Not vul</span>'}
+    ${below[k] ? ` · ${below[k]} below the line` : ''}</div>`;
+  const extras = rub.extras.length ? `<p class="small rb-extra">End of round: ${rub.extras.map((x) =>
+    `<strong>${short(x.side)} +${x.points}</strong> (${esc(x.why)})`).join(' · ')}. Included in the totals.</p>` : '';
+  return `<section class="card rubber-status"><h2 class="kh">Rubber ${rubberNo}</h2>${side('NS', 'ns')}${side('EW', 'ew')}
+    <p class="muted small">First to 2 games wins the rubber: +700 (2–0) or +500 (2–1). 100 below the line makes a game.</p>${extras}</section>`;
+}
+function rubberLine(sc) {
+  if (sc.passedOut) return '';
+  const parts = [];
+  if (sc.below) parts.push(`${sc.below} below the line`);
+  if (sc.above) parts.push(`${sc.above} above`);
+  return `<p class="small rb-line">${parts.join(' · ')}${sc.note ? ` · <strong>${esc(sc.note)}</strong>` : ''}</p>`;
 }
 
 // =============================================================
@@ -736,7 +783,11 @@ function renderEntry(r) {
   } : null;
   const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
   state.entry = { justSaved: false, sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
-  if (vulLocked()) {
+  if (isRubber(s)) {
+    // Rubber: vulnerability comes from the games already won at this table.
+    const v = rubberTable(s).vulBefore[n];
+    state.entry.e.vulNs = v.ns; state.entry.e.vulEw = v.ew;
+  } else if (vulLocked()) {
     // Locked: the board keeps what it has (or the club default), whatever a draft says.
     const v = existing ? vulForDeal(existing, s.firstDealer) : def;
     state.entry.e.vulNs = v.ns; state.entry.e.vulEw = v.ew;
@@ -862,7 +913,7 @@ function drawPreview(s) {
     saveBtn.textContent = 'Save result'; saveBtn.onclick = () => saveEntry(state.entry.draftKey);
   }
   if (miss) { p.innerHTML = `<span class="muted">${miss}</span>`; saveBtn.disabled = true; return; }
-  const sc = scoreDeal(d, s.firstDealer);
+  const sc = isRubber(s) ? rubberTable(s, d).deals[d.dealNo] : scoreDeal(d, s.firstDealer);
   p.innerHTML = d.passedOut ? '<strong>Passed out · no score</strong>'
     : `<span class="pv-c">${contractHtml(d)} by ${seatName(d.declarer)}</span><span class="pv-s ${sc.scoredBy === 'NS' ? 'tns' : 'tew'}">${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}</span>`;
   saveBtn.disabled = false;
@@ -889,7 +940,7 @@ async function saveEntry(draftKey) {
     const s = sessionById(sessionId);
     s.deals = s.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, b) => a.dealNo - b.dealNo);
     store.del(draftKey);
-    const sc = scoreDeal(out.deal, s.firstDealer);
+    const sc = scoredAt(s, out.deal);
     toast(`Saved · Board ${out.deal.boardNum} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
     // Stay on this board, right where it is on screen: show how the other
     // tables did and turn the button into "Next". No redraw, no jump.
@@ -916,7 +967,7 @@ async function saveEntry(draftKey) {
       if (cur) {
         const s = sessionById(sessionId);
         s.deals = s.deals.filter((x) => x.dealNo !== n).concat(cur);
-        const sc = scoreDeal(cur, s.firstDealer);
+        const sc = scoredAt(s, cur);
         sheet(`<h2>Saved on another phone</h2>
           <p>This board was just saved as <strong>${esc(contractText(cur))}${cur.passedOut ? '' : ' by ' + seatName(cur.declarer) + ', ' + esc(outcomeText(cur))}</strong>${sc.scoredBy ? ` (${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)})` : ''}.</p>
           <p>Your entry is still on screen. Tap Save again only if yours is the correct one.</p>`);
@@ -950,7 +1001,7 @@ const HIDDEN_NOTE = 'You’ll see the other tables’ results for this board onc
 
 function playsOfBoard(board, sessions) {
   const out = [];
-  for (const s of sessions) for (const d of s.deals) if (d.boardNum === board) out.push({ s, d, sc: scoreDeal(d, s.firstDealer) });
+  for (const s of sessions) for (const d of s.deals) if (d.boardNum === board) out.push({ s, d, sc: scoredAt(s, d) });
   return out;
 }
 
@@ -973,7 +1024,7 @@ function playCard({ s, d, sc }, highlight = false) {
     ${highlight ? '<span class="pill">Your table</span>' : ''}
     <p class="pl-names"><span class="tag ns">N/S</span> ${esc(pairLabel(s.nsP1, s.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(s.ewP1, s.ewP2))}</p>
     <p class="pl-res">${contractHtml(d)}${d.passedOut ? '' : ` by ${seatName(d.declarer)} · ${d.tricks} tricks · lead ${leadHtml(d)}`}</p>
-    <p class="muted">${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + outcomeHtml(d, sc)}</p>
+    <p class="muted">${isRubber(s) ? 'Rubber · ' : ''}${esc(sc.vulText)}${d.passedOut ? '' : ' · ' + outcomeHtml(d, sc)}</p>
     <div class="scores">${scorePair(sc.nsScore)}</div></div>`;
 }
 
@@ -1083,7 +1134,7 @@ async function renderBoard(r) {
 // =============================================================
 async function renderDay() {
   const data = state.data;
-  const rows = daySummary(data.sessions);
+  const rows = daySummary(data.sessions, dayTotalsFn(data.sessions));
   const games = data.sessions.length;
   $app.innerHTML = shell('day', `
     <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
@@ -1108,6 +1159,11 @@ function organiserPanel(data) {
     <p class="muted">Only phones logged in with the organiser code see this.</p>
     <button class="btn primary big block" id="newSession">Start a new session</button>
     <p class="muted small">Showing the session started ${esc(fmtStart(data.event))}${data.event.id === data.latestId ? ' (the newest)' : ''}</p>
+    <div class="org-row scoring-switch"><span><strong>Scoring: ${scoringMode() === 'rubber' ? 'Rubber bridge' : 'Chicago'}</strong><br>
+      <span class="muted small">${scoringMode() === 'rubber'
+        ? 'New tables use rubber scoring: 100 below the line makes a game, vulnerable after winning a game, rubber bonus 700/500.'
+        : 'New tables use Chicago scoring (each board on its own, set vulnerability).'} Tables already set up keep their own scoring.</span></span>
+      <button class="btn small-btn ${scoringMode() === 'rubber' ? 'primary' : 'ghost'}" id="scoringBtn">${scoringMode() === 'rubber' ? 'Use Chicago' : 'Use Rubber'}</button></div>
     <div class="org-row vul-switch"><span><strong>Vulnerability ${vulLocked() ? 'locked 🔒' : 'unlocked'}</strong><br>
       <span class="muted small">${vulLocked() ? 'Every board uses N/S, E/W, Both, Neither. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
       <button class="btn small-btn ${vulLocked() ? 'ghost' : 'primary'}" id="vulLockBtn">${vulLocked() ? 'Unlock' : 'Lock'}</button></div>
@@ -1339,6 +1395,28 @@ function wireOrganiser(data) {
       rerenderKeepScroll();
     } catch (e) { toast(e.message, 'error'); rerenderKeepScroll(); }
   };
+  document.getElementById('scoringBtn').onclick = () => {
+    const to = scoringMode() === 'rubber' ? 'chicago' : 'rubber';
+    sheet(`<h2>Switch to ${to === 'rubber' ? 'rubber bridge' : 'Chicago'} scoring?</h2>
+      <p>Tables set up <strong>from now on</strong> will use ${to === 'rubber' ? 'rubber bridge' : 'Chicago'} scoring.
+      Tables already set up — and every saved result — keep the scoring they started with.</p>
+      ${to === 'rubber' ? `<ul class="small"><li>Contract points go below the line; 100 makes a game. No part-score or game bonus.</li>
+        <li>A pair that has won a game is vulnerable — players can’t set it.</li>
+        <li>First to 2 games: +700 (2–0) or +500 (2–1).</li>
+        <li>After 4 boards an unfinished rubber scores +300 for a game up and +100 for a part-score.</li></ul>` : ''}
+      <button class="btn primary big block" id="scoringYes">Yes, switch</button>`, (root) => {
+      root.querySelector('#scoringYes').onclick = async (ev) => {
+        ev.currentTarget.disabled = true;
+        try {
+          await api('admin', { method: 'POST', body: { action: 'setScoringMode', mode: to } });
+          state.data.settings = { ...(state.data.settings || {}), scoringMode: to };
+          closeSheet();
+          toast(to === 'rubber' ? 'New tables will use rubber bridge scoring' : 'New tables will use Chicago scoring');
+          rerenderKeepScroll();
+        } catch (e) { closeSheet(); toast(e.message, 'error'); }
+      };
+    });
+  };
   document.getElementById('leaveOrg').onclick = async () => {
     try { await api('login', { method: 'DELETE' }); } catch { /* ignore */ }
     store.del('my'); store.del('lastSession');
@@ -1350,13 +1428,14 @@ function wireOrganiser(data) {
 async function renderPair(r) {
   const data = state.data;
   const key = r.a;
-  const row = daySummary(data.sessions).find((x) => x.key === key);
+  const row = daySummary(data.sessions, dayTotalsFn(data.sessions)).find((x) => x.key === key);
   const items = [];
   for (const s of data.sessions) {
     const side = pairKey(s.nsP1, s.nsP2) === key ? 'NS' : pairKey(s.ewP1, s.ewP2) === key ? 'EW' : null;
     if (!side) continue;
-    const scored = s.deals.map((d) => ({ d, sc: scoreDeal(d, s.firstDealer) }));
-    const t = sessionTotals(scored.map((x) => x.sc));
+    const rub = isRubber(s) ? rubberTable(s) : null;
+    const scored = s.deals.map((d) => ({ d, sc: rub ? rub.deals[d.dealNo] : scoreDeal(d, s.firstDealer) }));
+    const t = rub ? rubberTotals(rub) : sessionTotals(scored.map((x) => x.sc));
     const opp = side === 'NS' ? pairLabel(s.ewP1, s.ewP2) : pairLabel(s.nsP1, s.nsP2);
     const us = side === 'NS' ? t.nsPoints : t.ewPoints, them = side === 'NS' ? t.ewPoints : t.nsPoints;
     items.push(`<section class="card">
@@ -1365,7 +1444,8 @@ async function renderPair(r) {
       <table class="mini"><tbody>${scored.map(({ d, sc }) => {
         const pts = side === 'NS' ? sc.nsPoints : sc.ewPoints;
         return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${outcomeHtml(d, sc)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
-      }).join('')}</tbody></table></section>`);
+      }).join('')}${rub ? rub.extras.filter((x) => x.side === side).map((x) =>
+        `<tr><td colspan="3">End of round: ${esc(x.why)}</td><td class="num pos">${x.points}</td></tr>`).join('') : ''}</tbody></table></section>`);
   }
   $app.innerHTML = shell('day', `
     <header class="top"><a href="#/day" class="back">‹ Day summary</a><h1>${esc(row?.label || 'Pair')}</h1>

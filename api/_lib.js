@@ -232,6 +232,7 @@ export const toSession = (s) => ({
   location: s.location,
   startBoard: s.start_board,
   firstDealer: s.first_dealer,
+  scoring: s.scoring === 'rubber' ? 'rubber' : 'chicago',   // fixed when the table is set up
   nsP1: s.ns_p1, nsP2: s.ns_p2, ewP1: s.ew_p1, ewP2: s.ew_p2,
   createdAt: s.created_at,
   updatedAt: s.updated_at,
@@ -242,7 +243,10 @@ export const toSession = (s) => ({
 export async function getSettings() {
   const rows = await db('chi_settings?select=key,value');
   const v = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-  return { vulLocked: v.vul_locked !== false };   // locked unless the organiser has unlocked it
+  return {
+    vulLocked: v.vul_locked !== false,                          // locked unless the organiser has unlocked it
+    scoringMode: v.scoring_mode === 'rubber' ? 'rubber' : 'chicago',   // for tables set up from now on
+  };
 }
 
 export const cleanName = (s, max = 40) => String(s ?? '').trim().replace(/\s+/g, ' ').slice(0, max);

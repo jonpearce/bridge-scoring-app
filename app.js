@@ -374,7 +374,9 @@ function renderNew(r) {
       store.set('lastSession', { startBoard: out.session.startBoard, side, sessionId: out.session.id, eventId: curEventId() });
       upsertSession(out.session);
       toast(editing ? 'Names saved' : 'Table started');
-      go(`#/s/${out.session.id}`);
+      // New table: straight to the first board to enter. Changing names: back to the table.
+      const first = editing ? null : [1, 2, 3, 4].find((k) => !(out.session.deals || []).some((d) => d.dealNo === k));
+      go(first ? `#/deal/${out.session.id}/${first}` : `#/s/${out.session.id}`);
     } catch (e) {
       document.getElementById('formErr').textContent = e.message;
       btn.disabled = false;
@@ -908,9 +910,10 @@ function rubberSheetHtml(s) {
     const board = boardNumberFor(n, s.startBoard);
     const game = cur.games[cur.games.length - 1];
     if (sc.passedOut) continue;
-    if (sc.below) game[sc.winner].push({ pts: sc.below, board });
+    const bid = sc.bid;   // e.g. 4♥ X
+    if (sc.below) game[sc.winner].push({ pts: sc.below, board, bid });
     const extra = sc.above - sc.rubberBonus;
-    if (extra > 0) cur.above[sc.scoredBy].push({ pts: extra, board });
+    if (extra > 0) cur.above[sc.scoredBy].push({ pts: extra, board, bid });
     if (sc.rubberBonus) cur.above[sc.winner].push({ pts: sc.rubberBonus, board, tag: 'rubber' });
     if (sc.game) {
       game.done = true;
@@ -924,7 +927,7 @@ function rubberSheetHtml(s) {
     const target = open || (rubbers.push(fresh(t.state.rubberNo)), rubbers[rubbers.length - 1]);
     for (const x of t.extras) target.above[x.side].push({ pts: x.points, tag: x.why.startsWith('one game') ? 'game up' : 'part-score' });
   }
-  const entry = (x) => `<span class="sp-n">${x.pts}${x.tag ? `<small>${esc(x.tag)}</small>` : x.board ? `<small>bd ${x.board}</small>` : ''}</span>`;
+  const entry = (x) => `<span class="sp-n">${x.pts}${x.tag ? `<small>${esc(x.tag)}</small>` : x.bid ? `<small class="sp-bid">bid ${esc(x.bid)}</small>` : ''}</span>`;
   const col = (list) => `<div class="sp-col">${list.map(entry).join('')}</div>`;
   const sum = (r, k) => [...r.above[k], ...r.games.flatMap((g) => g[k])].reduce((a, x) => a + x.pts, 0);
   const sheets = rubbers.map((r) => {
@@ -935,6 +938,7 @@ function rubberSheetHtml(s) {
       <div class="sp-above">${col(r.above.NS)}${col(r.above.EW)}</div>
       <div class="sp-below">${games.map((g) => `<div class="sp-game ${g.done ? 'done' : ''}">${col(g.NS)}${col(g.EW)}</div>`).join('')}</div>
       ${finished ? `<div class="sp-total"><span>${sum(r, 'NS')}</span><span>${sum(r, 'EW')}</span></div>` : ''}
+      <div class="sp-tail" aria-hidden="true"><span></span><span></span></div>
       <p class="sp-cap">Rubber ${r.no}${r.winner ? ` — to ${short(r.winner)} ${r.score}` : finished ? ' — unfinished' : ' — in play'}</p>
     </div>`;
   }).join('');
@@ -1078,7 +1082,7 @@ function entryOthers(s, n) {
 function othersOnBoard(board, mySessionId) {
   if (!canSee(board)) return `<p class="muted">${HIDDEN_NOTE}</p>`;
   const plays = playsOfBoard(board, state.data.sessions).filter((p) => p.s.id !== mySessionId);
-  if (!plays.length) return '<p class="muted">No other table has recorded this board yet.</p>';
+  if (!plays.length) return '<p class="muted none-yet">No others have recorded this board yet.</p>';
   return `<p class="muted">${plays.length} other table${plays.length > 1 ? 's' : ''}</p>` + plays.map((p) => playCard(p)).join('');
 }
 

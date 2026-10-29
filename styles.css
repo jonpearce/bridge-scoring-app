@@ -580,3 +580,30 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .rubber-status p { margin: 4px 0 0; }
 .rb-line { margin: 6px 0 0; color: #4a4a4a; }
 .rb-extra { background: #fff8e6; border-radius: 8px; padding: 6px 8px; }
+
+/* Rubber score sheet: a pencil-and-paper score pad (rubber tables, after saving) */
+.score-paper {
+  --pencil: #3d3d40; --graphite: #5b5b60;
+  margin: 0 0 12px; padding: 14px 14px 10px; border-radius: 4px;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 31px, rgba(90, 130, 190, .13) 31px 32px),
+    linear-gradient(#fffefa, #fbf8ef);
+  box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 6px 16px rgba(0,0,0,.08);
+  font-family: 'Caveat', 'Bradley Hand', 'Segoe Print', cursive; color: var(--pencil);
+}
+.sp-sheet + .sp-sheet { margin-top: 18px; padding-top: 14px; border-top: 1.5px dashed rgba(60,60,64,.35); }
+.sp-head, .sp-above, .sp-game, .sp-total { display: grid; grid-template-columns: 1fr 1fr; }
+.sp-head span, .sp-total span { text-align: center; }
+.sp-head { font-size: 1.7rem; font-weight: 700; letter-spacing: .03em; }
+.sp-head span:first-child, .sp-above .sp-col:first-child, .sp-game .sp-col:first-child, .sp-total span:first-child {
+  border-right: 2px solid var(--graphite);   /* the line down the middle */
+}
+.sp-col { display: flex; flex-direction: column; align-items: center; gap: 0; padding: 2px 6px; }
+.sp-above { min-height: 64px; border-bottom: 3px solid var(--graphite); }   /* "the line" */
+.sp-above .sp-col { flex-direction: column-reverse; justify-content: flex-start; }   /* bonuses stack upwards */
+.sp-game { min-height: 34px; }
+.sp-game.done { border-bottom: 2px solid var(--graphite); }   /* line under each game won */
+.sp-n { font-size: 1.85rem; line-height: 1.1; font-weight: 500; transform: rotate(-1.5deg); }
+.sp-n small { font-size: .95rem; margin-left: 4px; color: #8a8a8f; font-weight: 500; }
+.sp-total { margin-top: 6px; padding-top: 2px; border-top: 3px double var(--graphite); font-size: 2rem; font-weight: 700; }
+.sp-cap { margin: 6px 0 0; text-align: center; font-size: 1.35rem; color: var(--graphite); }

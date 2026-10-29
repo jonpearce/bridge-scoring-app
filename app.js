@@ -893,6 +893,69 @@ function onEntryTap(ev) {
   drawEntry();
 }
 
+// ---------- rubber score sheet (shown after saving a board at a rubber table) ----------
+// Drawn like a pencil-and-paper rubber bridge score pad: N/S left, E/W right,
+// bonuses above the line, trick points below it, a new line under each game.
+function rubberSheetHtml(s) {
+  const t = rubberTable(s);
+  const rubbers = [];
+  let cur = null;
+  const fresh = (no) => ({ no, above: { NS: [], EW: [] }, games: [{ NS: [], EW: [], done: false }], winner: null, score: '' });
+  for (let n = 1; n <= 4; n++) {
+    const sc = t.deals[n];
+    if (!sc) continue;
+    if (!cur || cur.no !== sc.rubberNo) { cur = fresh(sc.rubberNo); rubbers.push(cur); }
+    const board = boardNumberFor(n, s.startBoard);
+    const game = cur.games[cur.games.length - 1];
+    if (sc.passedOut) continue;
+    if (sc.below) game[sc.winner].push({ pts: sc.below, board });
+    const extra = sc.above - sc.rubberBonus;
+    if (extra > 0) cur.above[sc.scoredBy].push({ pts: extra, board });
+    if (sc.rubberBonus) cur.above[sc.winner].push({ pts: sc.rubberBonus, board, tag: 'rubber' });
+    if (sc.game) {
+      game.done = true;
+      if (sc.rubberBonus) { cur.winner = sc.winner; cur.score = sc.note.match(/\d–\d/)?.[0] || ''; cur = null; }
+      else cur.games.push({ NS: [], EW: [], done: false });
+    }
+  }
+  const last = rubbers[rubbers.length - 1];
+  const open = last && !last.winner ? last : null;
+  if (t.extras.length) {
+    const target = open || (rubbers.push(fresh(t.state.rubberNo)), rubbers[rubbers.length - 1]);
+    for (const x of t.extras) target.above[x.side].push({ pts: x.points, tag: x.why.startsWith('one game') ? 'game up' : 'part-score' });
+  }
+  const entry = (x) => `<span class="sp-n">${x.pts}${x.tag ? `<small>${esc(x.tag)}</small>` : x.board ? `<small>bd ${x.board}</small>` : ''}</span>`;
+  const col = (list) => `<div class="sp-col">${list.map(entry).join('')}</div>`;
+  const sum = (r, k) => [...r.above[k], ...r.games.flatMap((g) => g[k])].reduce((a, x) => a + x.pts, 0);
+  const sheets = rubbers.map((r) => {
+    const finished = !!r.winner || (r === rubbers[rubbers.length - 1] && t.complete);
+    const games = r.games.filter((g) => g.NS.length || g.EW.length || g.done);
+    return `<div class="sp-sheet">
+      <div class="sp-head"><span>N/S</span><span>E/W</span></div>
+      <div class="sp-above">${col(r.above.NS)}${col(r.above.EW)}</div>
+      <div class="sp-below">${games.map((g) => `<div class="sp-game ${g.done ? 'done' : ''}">${col(g.NS)}${col(g.EW)}</div>`).join('')}</div>
+      ${finished ? `<div class="sp-total"><span>${sum(r, 'NS')}</span><span>${sum(r, 'EW')}</span></div>` : ''}
+      <p class="sp-cap">Rubber ${r.no}${r.winner ? ` — to ${short(r.winner)} ${r.score}` : finished ? ' — unfinished' : ' — in play'}</p>
+    </div>`;
+  }).join('');
+  return `<section class="score-paper" aria-label="Rubber score sheet">${sheets || '<p class="sp-cap">Nothing scored yet</p>'}</section>
+    <button type="button" class="btn ghost block" data-act="editagain">Change this board</button>`;
+}
+function showRubberSheet(s) {
+  const box = document.getElementById('entry'); if (!box) return;
+  // Handwriting font, fetched only the first time a score sheet is shown (never blocks other screens).
+  if (!document.getElementById('sheetFont')) {
+    const l = document.createElement('link');
+    l.id = 'sheetFont'; l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap';
+    document.head.appendChild(l);
+  }
+  box.innerHTML = rubberSheetHtml(s);
+  box.onclick = (ev) => { if (ev.target.closest('[data-act="editagain"]')) drawEntry(); };
+  const top = box.getBoundingClientRect().top;
+  if (top < 0 || top > window.innerHeight / 2) window.scrollBy({ top: top - 80, behavior: 'smooth' });
+}
+
 function entryDeal() {
   const { e, n } = state.entry;
   if (e.passedOut) return { dealNo: n, passedOut: true, vulNs: e.vulNs, vulEw: e.vulEw };
@@ -954,7 +1017,7 @@ async function saveEntry(draftKey) {
     const o = document.getElementById('others');
     if (o) o.innerHTML = othersOnBoard(out.deal.boardNum, sessionId);
     drawPreview(s);
-    showOthersIfHidden();
+    if (isRubber(s)) showRubberSheet(s); else showOthersIfHidden();
     loadDay().then(() => {
       const o = document.getElementById('others');
       if (o && route().name === 'deal' && state.entry?.justSaved) o.innerHTML = othersOnBoard(out.deal.boardNum, sessionId);

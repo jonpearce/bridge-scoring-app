@@ -615,3 +615,4 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 
 /* "No others have recorded this board yet." — kept to one line on phones */
 .none-yet { font-size: clamp(.82rem, 4.1vw, 1rem); white-space: nowrap; }
+.sp-suit { font-size: .8em; }

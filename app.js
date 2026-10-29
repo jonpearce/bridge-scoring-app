@@ -927,7 +927,7 @@ function rubberSheetHtml(s) {
     const target = open || (rubbers.push(fresh(t.state.rubberNo)), rubbers[rubbers.length - 1]);
     for (const x of t.extras) target.above[x.side].push({ pts: x.points, tag: x.why.startsWith('one game') ? 'game up' : 'part-score' });
   }
-  const entry = (x) => `<span class="sp-n">${x.pts}${x.tag ? `<small>${esc(x.tag)}</small>` : x.bid ? `<small class="sp-bid">bid ${esc(x.bid)}</small>` : ''}</span>`;
+  const entry = (x) => `<span class="sp-n">${x.pts}${x.tag ? `<small>${esc(x.tag)}</small>` : x.bid ? `<small class="sp-bid">bid ${sheetBid(x.bid)}</small>` : ''}</span>`;
   const col = (list) => `<div class="sp-col">${list.map(entry).join('')}</div>`;
   const sum = (r, k) => [...r.above[k], ...r.games.flatMap((g) => g[k])].reduce((a, x) => a + x.pts, 0);
   const sheets = rubbers.map((r) => {
@@ -945,6 +945,9 @@ function rubberSheetHtml(s) {
   return `<section class="score-paper" aria-label="Rubber score sheet">${sheets || '<p class="sp-cap">Nothing scored yet</p>'}</section>
     <button type="button" class="btn ghost block" data-act="editagain">Change this board</button>`;
 }
+// "4♥ X" → "4 ♥ X" with the suit symbol drawn a little smaller (score sheet only).
+const sheetBid = (bid) => esc(bid).replace(/^(\d)(♣|♦|♥|♠|NT)/, (m, lvl, st) =>
+  `${lvl} ${'♣♦♥♠'.includes(st) ? `<span class="sp-suit">${st}</span>` : st}`);
 function showRubberSheet(s) {
   const box = document.getElementById('entry'); if (!box) return;
   // Handwriting font, fetched only the first time a score sheet is shown (never blocks other screens).

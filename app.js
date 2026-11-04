@@ -1721,7 +1721,7 @@ const LOG_WORDS = {
   table_changed: 'Changed the table', board_numbers_changed: 'Changed board numbers', board_saved: 'Saved a board',
   board_corrected: 'Corrected a board', refused: 'Refused', error: 'Server error', phone_error: 'Phone error',
   no_connection: 'No connection', screen: 'Went to', start_again: 'Start again', joined_table: 'Joined a table',
-  swapped_side: 'Swapped side', asked_before_changing_other_phone: 'Asked before changing the other phone’s result',
+  swapped_side: 'Swapped side', stay_awake_refused: 'Phone refused to stay awake', stay_awake_not_supported: 'Phone can’t be kept awake (old browser)', asked_before_changing_other_phone: 'Asked before changing the other phone’s result',
   changed_other_phone_result: 'Chose Save my change (over the other phone’s result)', other_phone_changed_board_seen: 'Saw the other phone change this board',
   edit_older_than_saved: 'Opened an unsaved edit older than the saved board', same_result_other_phone: 'Same result as the other phone (no conflict)',
   saved_on_other_phone_shown: 'Told “Saved on another phone”', saved_again_over_other_phone: 'Chose Save again (over the other phone)',
@@ -1840,6 +1840,25 @@ async function refresh() {
     }
   } catch { /* offline — try again next time */ }
 }
+
+// ---------- keep the phone awake while the app is open ----------
+// Uses the browser's Screen Wake Lock. The lock drops whenever the app is hidden
+// (another app, screen off), so it is asked for again on return and on any tap.
+let wakeLock = null, wakeLogged = false;
+async function keepAwake() {
+  if (!('wakeLock' in navigator) || document.hidden || wakeLock) return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+  } catch (e) {
+    wakeLock = null;
+    if (!wakeLogged) { wakeLogged = true; logEvent('stay_awake_refused', { message: String(e?.message || e).slice(0, 200) }); }
+  }
+}
+if (!('wakeLock' in navigator)) logEvent('stay_awake_not_supported', { browser: navigator.userAgent.slice(0, 160) });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
+document.addEventListener('pointerdown', () => keepAwake(), { passive: true });
+keepAwake();
 
 // ---------- start ----------
 (async () => {

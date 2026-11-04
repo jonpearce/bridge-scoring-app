@@ -58,8 +58,9 @@ globalThis.fetch = async (url, opts = {}) => {
 
 // ---------- tiny request/response doubles ----------
 let cookie = '';
+let device = 'phone-aaaa';
 async function call(mod, method, body, query = '') {
-  const req = { method, url: '/api/x' + query, headers: { cookie }, body };
+  const req = { method, url: '/api/x' + query, headers: { cookie, 'x-device': device }, body };
   const res = {
     statusCode: 200, headers: {}, out: '',
     setHeader(k, v) { this.headers[k.toLowerCase()] = v; },
@@ -527,4 +528,20 @@ test('board numbers go in sets of four (1–4, 5–8 …)', async () => {
   T.chi_sessions.find((r) => r.id === id).start_board = 2;
   const n = await call(sessions, 'PATCH', { id, ...newTable, nsP1: 'Ivy', nsP2: 'Jo', ewP1: 'Ken', ewP2: 'Lucy', startBoard: 2, fromStartBoard: 2 });
   assert.equal(n.body.session.startBoard, 2);
+});
+
+test('each board remembers which phone saved it', async () => {
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const t = (await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 601, nsP1: 'Mo', nsP2: 'Nell', ewP1: 'Oz', ewP2: 'Pip', clientToken: crypto.randomUUID() })).body.session;
+  device = 'phone-aaaa';
+  const a = await call(deal, 'PUT', { sessionId: t.id, dealNo: 2, level: 3, strain: 'H', declarer: 'E', tricks: 9 });
+  assert.equal(a.body.deal.savedBy, 'phone-aaaa');
+  device = 'phone-bbbb';
+  const b = await call(deal, 'PUT', { sessionId: t.id, dealNo: 2, level: 4, strain: 'H', declarer: 'E', tricks: 10, expectedUpdatedAt: a.body.deal.updatedAt });
+  assert.equal(b.body.deal.savedBy, 'phone-bbbb');
+  // phone A's correction from its old copy is refused (it must see the new result first)
+  device = 'phone-aaaa';
+  const c = await call(deal, 'PUT', { sessionId: t.id, dealNo: 2, level: 3, strain: 'H', declarer: 'W', tricks: 9, expectedUpdatedAt: a.body.deal.updatedAt });
+  assert.equal(c.status, 409);
+  assert.equal(c.body.current.level, 4);
 });

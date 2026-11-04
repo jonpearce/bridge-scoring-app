@@ -1,4 +1,4 @@
-import { handler, send, readJson, requireAuth, db, HttpError, toDeal, getSettings, logEvent } from './_lib.js';
+import { handler, send, readJson, requireAuth, db, HttpError, toDeal, getSettings, logEvent, deviceOf } from './_lib.js';
 import { scoreDeal, validateDeal, boardNumberFor, vulnerabilityFor, SCORING_VERSION } from '../lib/chicago.js';
 import { scoreRubberTable } from '../lib/rubber.js';
 
@@ -69,6 +69,7 @@ export default handler({
       vul_ew: deal.vulEw,
       ns_score: scored.nsScore,
       scoring_version: SCORING_VERSION,
+      ...(deviceOf(req) ? { saved_by: deviceOf(req) } : {}),
     };
 
     const key = `session_id=eq.${sess.id}&deal_no=eq.${dealNo}`;

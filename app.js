@@ -904,7 +904,13 @@ function renderEntry(r) {
     vulNs: vulForDeal(existing, s.firstDealer).ns, vulEw: vulForDeal(existing, s.firstDealer).ew,
   } : null;
   const blank = { passedOut: false, level: null, strain: null, doubled: '', declarer: null, diff: 0, leadSuit: null, leadRank: null, vulNs: def.ns, vulEw: def.ew };
-  state.entry = { justSaved: false, sessionId: s.id, n, def, expectedUpdatedAt: existing?.updatedAt || null, e: { ...blank, ...(store.get(draftKey) || saved || {}) } };
+  const draft = store.get(draftKey);
+  const { _base, ...draftEntry } = draft || {};
+  // An unsaved edit keeps the version it started from: if the other phone has saved
+  // since, Save will show "Saved on another phone" instead of overwriting it.
+  const base = draft && '_base' in draft ? _base : (existing?.updatedAt || null);
+  state.entry = { justSaved: false, sessionId: s.id, n, def, expectedUpdatedAt: base, e: { ...blank, ...(draft ? draftEntry : saved || {}) } };
+  if (draft && '_base' in draft && existing && _base !== existing.updatedAt) logEvent('edit_older_than_saved', { sessionId: s.id, dealNo: n });
   if (isRubber(s)) {
     // Rubber: vulnerability comes from the games already won at this table.
     const v = rubberTable(s).vulBefore[n];
@@ -1005,7 +1011,9 @@ function onEntryTap(ev) {
   else if (d.act === 'pass') e.passedOut = true;
   else if (d.act === 'unpass') e.passedOut = false;
   else return;
-  store.set(`draft:${state.entry.sessionId}:${state.entry.n}`, e);
+  // Remember which saved version this edit started from, so a change made on the
+  // other phone in the meantime is never overwritten without asking.
+  store.set(`draft:${state.entry.sessionId}:${state.entry.n}`, { ...e, _base: state.entry.expectedUpdatedAt || null });
   if (state.entry.justSaved) {
     state.entry.justSaved = false;
     const note = document.getElementById('entryNote');
@@ -1120,14 +1128,35 @@ function showOthersIfHidden() {
   if (r.top > bar - 60 || r.bottom > bar) { if (want > 0) window.scrollBy({ top: want, behavior: 'smooth' }); }
 }
 
-async function saveEntry(draftKey) {
+// Same contract and result? (Used to avoid asking when two phones agree.)
+const sameResult = (a, b) => !!a.passedOut === !!b.passedOut && (a.passedOut || (a.level === b.level && a.strain === b.strain
+  && (a.doubled || '') === (b.doubled || '') && a.declarer === b.declarer && a.tricks === b.tricks));
+const resultText = (d) => `${contractText(d)}${d.passedOut ? '' : ' by ' + seatName(d.declarer) + ', ' + outcomeText(d)}`;
+
+async function saveEntry(draftKey, opts = {}) {
   const { sessionId, n, expectedUpdatedAt } = state.entry;
   const d = entryDeal();
   if (missingFor(d)) return;
+  // Changing a result the OTHER phone saved? Ask first, so both phones know.
+  const s0 = sessionById(sessionId);
+  const saved = s0?.deals.find((x) => x.dealNo === n);
+  if (!opts.confirmed && saved && saved.savedBy && saved.savedBy !== deviceId() && !sameResult(saved, d)) {
+    logEvent('asked_before_changing_other_phone', { sessionId, dealNo: n });
+    const sc = scoredAt(s0, saved);
+    sheet(`<h2>Change the other phone’s result?</h2>
+      <p>This board was saved on the other phone as <strong>${esc(resultText(saved))}</strong>${sc.scoredBy ? ` (${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)})` : ''}.</p>
+      <p>You are changing it to <strong>${esc(resultText(d))}</strong>. Check with the other pair first.</p>
+      <button class="btn go big block" id="changeYes">Save my change</button>`, (root) => {
+      root.querySelector('#changeYes').onclick = () => { closeSheet(); logEvent('changed_other_phone_result', { sessionId, dealNo: n }); saveEntry(draftKey, { confirmed: true }); };
+      root.querySelector('#sheetClose').onclick = () => { closeSheet(); logEvent('kept_other_phone_result', { sessionId, dealNo: n }); store.del(draftKey); render(); };
+    });
+    return;
+  }
   const btn = document.getElementById('saveBtn');
   btn.disabled = true; btn.textContent = 'Saving…';
+  state.entry.saving = true; state.saveSeq = (state.saveSeq || 0) + 1;
   try {
-    const out = await api('deal', { method: 'PUT', body: { sessionId, ...d, expectedUpdatedAt } });
+    const out = await api('deal', { method: 'PUT', body: { sessionId, ...d, expectedUpdatedAt } }).finally(() => { if (state.entry) state.entry.saving = false; });
     const s = sessionById(sessionId);
     s.deals = s.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, b) => a.dealNo - b.dealNo);
     store.del(draftKey);
@@ -1168,8 +1197,7 @@ async function saveEntry(draftKey) {
         const sc = scoredAt(s, cur);
         // Both phones entered the same result: nothing to decide, it's saved.
         const mineNow = entryDeal();
-        const same = !!cur.passedOut === !!mineNow.passedOut && (cur.passedOut || (cur.level === mineNow.level && cur.strain === mineNow.strain
-          && (cur.doubled || '') === (mineNow.doubled || '') && cur.declarer === mineNow.declarer && cur.tricks === mineNow.tricks));
+        const same = sameResult(cur, mineNow);
         logEvent(same ? 'same_result_other_phone' : 'saved_on_other_phone_shown', { sessionId, dealNo: n });
         if (same) {
           store.del(draftKey);
@@ -1185,7 +1213,7 @@ async function saveEntry(draftKey) {
           root.querySelector('#saveAgain').onclick = () => {
             closeSheet();
             logEvent('saved_again_over_other_phone', { sessionId, dealNo: n });
-            saveEntry(draftKey);   // a correction of the board the other phone saved
+            saveEntry(draftKey, { confirmed: true });   // a correction of the board the other phone saved
           };
           root.querySelector('#sheetClose').onclick = () => {
             closeSheet();
@@ -1689,7 +1717,9 @@ const LOG_WORDS = {
   table_changed: 'Changed the table', board_numbers_changed: 'Changed board numbers', board_saved: 'Saved a board',
   board_corrected: 'Corrected a board', refused: 'Refused', error: 'Server error', phone_error: 'Phone error',
   no_connection: 'No connection', screen: 'Went to', start_again: 'Start again', joined_table: 'Joined a table',
-  swapped_side: 'Swapped side', same_result_other_phone: 'Same result as the other phone (no conflict)',
+  swapped_side: 'Swapped side', asked_before_changing_other_phone: 'Asked before changing the other phone’s result',
+  changed_other_phone_result: 'Chose Save my change (over the other phone’s result)', other_phone_changed_board_seen: 'Saw the other phone change this board',
+  edit_older_than_saved: 'Opened an unsaved edit older than the saved board', same_result_other_phone: 'Same result as the other phone (no conflict)',
   saved_on_other_phone_shown: 'Told “Saved on another phone”', saved_again_over_other_phone: 'Chose Save again (over the other phone)',
   kept_other_phone_result: 'Chose Cancel (kept the other phone’s result)', name_entered_twice: 'Name entered twice (stopped on the phone)', joined_instead_of_duplicate: 'Joined the table already set up', left_table: 'Left the table', stale_board_numbers_fixed: 'Board numbers caught up',
 };
@@ -1770,9 +1800,27 @@ async function refresh() {
   const r = route();
   if (r.name === 'login' || r.name === 'new' || r.name === 'edit') return;
   try {
+    const seq = state.saveSeq;
     await loadDay();
+    if (seq !== state.saveSeq) return;   // a save happened meanwhile: this data may be older
     if (r.name === 'deal') {
       const s = sessionById(r.a);
+      // The other phone changed this board while this one is looking at it.
+      const cur = s && state.entry && s.deals.find((d) => d.dealNo === state.entry.n);
+      if (cur && !state.entry.saving && state.entry.expectedUpdatedAt !== cur.updatedAt && state.entry.sessionId === s.id) {
+        const dirty = !!store.get(state.entry.draftKey);
+        const what = `${contractText(cur)}${cur.passedOut ? '' : ` by ${seatName(cur.declarer)}, ${cur.tricks} tricks`}`;
+        logEvent('other_phone_changed_board_seen', { sessionId: s.id, dealNo: state.entry.n, dirty });
+        if (!dirty) {
+          // Nothing unsaved here: just show the new result.
+          toast(`The other phone has just changed this board to ${what}`);
+          const y = window.scrollY; await render(); window.scrollTo(0, y); return;
+        }
+        if (!state.entry.warnedOther) {
+          state.entry.warnedOther = true;
+          toast(`The other phone has just saved this board as ${what}. Check before saving yours.`, 'error');
+        }
+      }
       if (s && state.entry && state.entry.shownStart !== s.startBoard) {
         // Board numbers were changed on another phone: redraw (the half-entered result is kept).
         toast(`This table is now Boards ${s.startBoard}–${s.startBoard + 3}`);

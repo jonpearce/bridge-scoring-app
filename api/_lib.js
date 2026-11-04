@@ -254,6 +254,7 @@ export const toDeal = (r) => ({
   vulEw: r.vul_ew ?? undefined,
   nsScore: r.ns_score,
   updatedAt: r.updated_at,
+  savedBy: r.saved_by || null,   // which phone last saved it
 });
 
 export const toSession = (s) => ({

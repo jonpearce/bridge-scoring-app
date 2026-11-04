@@ -1166,9 +1166,34 @@ async function saveEntry(draftKey) {
         const s = sessionById(sessionId);
         s.deals = s.deals.filter((x) => x.dealNo !== n).concat(cur);
         const sc = scoredAt(s, cur);
+        // Both phones entered the same result: nothing to decide, it's saved.
+        const mineNow = entryDeal();
+        const same = !!cur.passedOut === !!mineNow.passedOut && (cur.passedOut || (cur.level === mineNow.level && cur.strain === mineNow.strain
+          && (cur.doubled || '') === (mineNow.doubled || '') && cur.declarer === mineNow.declarer && cur.tricks === mineNow.tricks));
+        logEvent(same ? 'same_result_other_phone' : 'saved_on_other_phone_shown', { sessionId, dealNo: n });
+        if (same) {
+          store.del(draftKey);
+          toast('Already saved on the other phone, with the same result');
+          render();
+          return;
+        }
         sheet(`<h2>Saved on another phone</h2>
           <p>This board was just saved as <strong>${esc(contractText(cur))}${cur.passedOut ? '' : ' by ' + seatName(cur.declarer) + ', ' + esc(outcomeText(cur))}</strong>${sc.scoredBy ? ` (${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)})` : ''}.</p>
-          <p>Your entry is still on screen. Tap Save again only if yours is the correct one.</p>`);
+          <p>Your entry is <strong>${esc(contractText(mineNow))}${mineNow.passedOut ? '' : ' by ' + seatName(mineNow.declarer) + ', ' + esc(outcomeText(mineNow))}</strong>.
+          Tap <strong>Save again</strong> only if yours is the correct one. <strong>Cancel</strong> keeps the other phone's result.</p>
+          <button class="btn go big block" id="saveAgain">Save again</button>`, (root) => {
+          root.querySelector('#saveAgain').onclick = () => {
+            closeSheet();
+            logEvent('saved_again_over_other_phone', { sessionId, dealNo: n });
+            saveEntry(draftKey);   // a correction of the board the other phone saved
+          };
+          root.querySelector('#sheetClose').onclick = () => {
+            closeSheet();
+            logEvent('kept_other_phone_result', { sessionId, dealNo: n });
+            store.del(draftKey);   // drop this phone's entry; show the saved one
+            render();
+          };
+        });
       } else {
         toast(e.message, 'error');
       }
@@ -1664,7 +1689,9 @@ const LOG_WORDS = {
   table_changed: 'Changed the table', board_numbers_changed: 'Changed board numbers', board_saved: 'Saved a board',
   board_corrected: 'Corrected a board', refused: 'Refused', error: 'Server error', phone_error: 'Phone error',
   no_connection: 'No connection', screen: 'Went to', start_again: 'Start again', joined_table: 'Joined a table',
-  swapped_side: 'Swapped side', name_entered_twice: 'Name entered twice (stopped on the phone)', joined_instead_of_duplicate: 'Joined the table already set up', left_table: 'Left the table', stale_board_numbers_fixed: 'Board numbers caught up',
+  swapped_side: 'Swapped side', same_result_other_phone: 'Same result as the other phone (no conflict)',
+  saved_on_other_phone_shown: 'Told “Saved on another phone”', saved_again_over_other_phone: 'Chose Save again (over the other phone)',
+  kept_other_phone_result: 'Chose Cancel (kept the other phone’s result)', name_entered_twice: 'Name entered twice (stopped on the phone)', joined_instead_of_duplicate: 'Joined the table already set up', left_table: 'Left the table', stale_board_numbers_fixed: 'Board numbers caught up',
 };
 const screenName = (h) => {
   const [n, a, b] = String(h || '').replace(/^#\//, '').split('/');

@@ -646,3 +646,8 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 }
 .btn.go:active { background: var(--go-dark); transform: translateY(2px); box-shadow: 0 1px 0 var(--go-dark); }
 .btn.go:disabled { background: #b9c7bf; border-color: #a7b5ad; box-shadow: none; text-shadow: none; opacity: 1; color: #f4f7f5; }
+
+/* Day summary: this phone's own pair stands out */
+.card.rank.me { background: #fff6cf; border: 2px solid var(--gold); box-shadow: 0 0 0 3px rgba(181, 139, 51, .18); }
+.card.rank.me .rv { color: var(--green); }
+.you-pill { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 99px; background: var(--gold); color: #fff; font: 700 .78rem var(--sans); vertical-align: middle; }

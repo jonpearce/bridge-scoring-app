@@ -1327,12 +1327,16 @@ async function renderDay() {
   const data = state.data;
   const rows = daySummary(data.sessions, dayTotalsFn(data.sessions));
   const games = data.sessions.length;
+  // This phone's own pair: the side it is sitting at, else the names it last played as.
+  const m = mine(), t = m && sessionById(m.sessionId);
+  const my = t ? (m.side === 'NS' ? [t.nsP1, t.nsP2] : [t.ewP1, t.ewP2]) : store.get('prefs', {}).names;
+  const myKey = my?.[0] && my?.[1] ? pairKey(my[0], my[1]) : null;
   $app.innerHTML = shell('day', `
     <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
     <p class="muted">${games} table${games === 1 ? '' : 's'} in this session. Pairs are ranked by the total points they won.</p>
-    ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}">
+    ${rows.length ? rows.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}" ${x.key === myKey ? 'aria-current="true"' : ''}>
         <span class="rk">${x.rank}</span>
-        <span class="rn"><strong>${esc(x.label)}</strong>
+        <span class="rn"><strong>${esc(x.label)}${x.key === myKey ? ' <span class="you-pill">You</span>' : ''}</strong>
           <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
           <span class="muted">Average ${x.avgPerBoard} a board</span></span>
         <span class="rv">${x.points}</span></a>`).join('')

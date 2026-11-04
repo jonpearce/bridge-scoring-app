@@ -10,7 +10,7 @@
 // =============================================================
 import {
   scoreDeal, sessionTotals, daySummary, vulnerabilityFor, vulForDeal, vulnerabilityText, dealerFor, boardNumberFor,
-  contractText, outcomeText, strainSymbol, seatName, sideOf, sideName, pairKey, pairLabel,
+  contractText, outcomeText, strainSymbol, setStartFor, seatName, sideOf, sideName, pairKey, pairLabel,
   LEAD_RANKS, SUITS,
 } from './lib/chicago.js';
 import { scoreRubberTable, rubberTotals } from './lib/rubber.js';
@@ -289,7 +289,7 @@ function renderPlay() {
   const back = myTable ? `<section class="card your-table"><h2>Your table</h2>
       <p><span class="tag ns">N/S</span> ${esc(pairLabel(myTable.nsP1, myTable.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(myTable.ewP1, myTable.ewP2))}</p>
       <p class="muted small">Boards ${myTable.startBoard}–${myTable.startBoard + 3} · ${myTable.deals.length} of 4 entered</p>
-      <a class="btn primary big block" href="#/s/${myTable.id}">Back to your table ›</a></section>` : '';
+      <a class="btn go big block" href="#/s/${myTable.id}">Back to your table ›</a></section>` : '';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1>${sessionPicker()}</header>
     ${back}
@@ -352,7 +352,7 @@ function renderNew(r) {
     ? { startBoard: editing.startBoard, firstDealer: editing.firstDealer,
         us1: mySide === 'NS' ? editing.nsP1 : editing.ewP1, us2: mySide === 'NS' ? editing.nsP2 : editing.ewP2,
         them1: mySide === 'NS' ? editing.ewP1 : editing.nsP1, them2: mySide === 'NS' ? editing.ewP2 : editing.nsP2 }
-    : { startBoard: last ? last.startBoard + 4 : 1, firstDealer: 'N',
+    : { startBoard: last ? setStartFor(last.startBoard + 4) : 1, firstDealer: 'N',
         us1: prefs.names?.[0] || '', us2: prefs.names?.[1] || '', them1: '', them2: '' };
 
   $app.innerHTML = shell('play', `
@@ -384,7 +384,7 @@ function renderNew(r) {
         ${played ? '<p class="muted small">Who deals first is fixed once a result has been saved. Board numbers can still be changed; saved results move with them.</p>' : ''}
       </section>
       <p id="formErr" class="err" role="alert"></p>
-      <button class="btn primary big block" type="submit">${editing ? 'Save names' : 'Start playing'}</button>
+      <button class="btn ${editing ? 'primary' : 'go'} big block" type="submit">${editing ? 'Save names' : 'Start playing'}</button>
     </form>`);
 
   const f = document.getElementById('newForm');
@@ -392,8 +392,12 @@ function renderNew(r) {
   const token = uuid();
   let allowDuplicate = false;
   const sbInput = f.startBoard;
+  // A board number typed in the middle of a set (e.g. 7) means that set (5–8).
+  // A table that already has odd numbers (e.g. 2–5) keeps them unless they're changed.
+  const keepAsIs = (n) => editing && n === editing.startBoard;
+  const firstOf = (n) => (keepAsIs(n) ? n : setStartFor(n));
   const update = () => {
-    const n = parseInt(sbInput.value, 10);
+    const raw = parseInt(sbInput.value, 10), n = raw > 0 ? firstOf(raw) : 0;
     document.getElementById('boardsLine').textContent = n > 0 ? `Boards ${n}, ${n + 1}, ${n + 2} and ${n + 3}` : '';
     document.getElementById('usLbl').textContent = `Your pair (${sideName(side)})`;
     document.getElementById('themLbl').textContent = `Opponents (${sideName(side === 'NS' ? 'EW' : 'NS')})`;
@@ -405,8 +409,9 @@ function renderNew(r) {
     if (sbInput.value !== digits) sbInput.value = digits || (sbInput.value.replace(/\D/g, '') ? '1' : '');
     update();
   };
-  sbInput.onblur = () => { if (!(parseInt(sbInput.value, 10) >= 1)) { sbInput.value = '1'; update(); } };
-  f.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => { sbInput.value = Math.max(1, (parseInt(sbInput.value, 10) || 1) + Number(b.dataset.step)); update(); }));
+  sbInput.onblur = () => { const n = parseInt(sbInput.value, 10); sbInput.value = n >= 1 ? firstOf(n) : '1'; update(); };
+  // − / + move a whole set of four.
+  f.querySelectorAll('[data-step]').forEach((b) => (b.onclick = () => { sbInput.value = Math.max(1, setStartFor(parseInt(sbInput.value, 10) || 1) + 4 * Number(b.dataset.step)); update(); }));
   f.querySelectorAll('[data-dealer]').forEach((b) => (b.onclick = () => { dealer = b.dataset.dealer; radio(f, '[data-dealer]', b); }));
   f.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => { side = b.dataset.side; radio(f, '[data-side]', b); update(); }));
   nameSuggest(f, ['us1', 'us2', 'them1', 'them2'], nameList);
@@ -437,7 +442,7 @@ function renderNew(r) {
     }
     const fd = Object.fromEntries(new FormData(f));
     const body = {
-      startBoard: Math.max(1, parseInt(sbInput.value, 10) || 1), firstDealer: dealer,
+      startBoard: firstOf(Math.max(1, parseInt(sbInput.value, 10) || 1)), firstDealer: dealer,
       nsP1: side === 'NS' ? fd.us1 : fd.them1, nsP2: side === 'NS' ? fd.us2 : fd.them2,
       ewP1: side === 'EW' ? fd.us1 : fd.them1, ewP2: side === 'EW' ? fd.us2 : fd.them2,
     };
@@ -462,7 +467,7 @@ function renderNew(r) {
         // The other pair already set this table up: join it rather than make a second copy.
         sheet(`<h2>This table is already set up</h2><p>${esc(e.message)}</p>
           <p class="muted small">If the other pair set it up, join it. If this really is a different game, set up a separate table.</p>
-          <button class="btn primary big block" id="joinIt">Join that table</button>
+          <button class="btn go big block" id="joinIt">Join that table</button>
           <button class="btn big block" id="newAnyway">Set up a separate table</button>`, (root) => {
           root.querySelector('#newAnyway').onclick = () => { closeSheet(); allowDuplicate = true; f.requestSubmit(); };
           root.querySelector('#joinIt').onclick = async () => {
@@ -587,7 +592,7 @@ function radio(root, sel, on) {
 function boardNumbersSheet(s, after) {
   const played = s.deals.length;
   sheet(`<h2>Change board numbers</h2>
-    <p>This table is playing <strong>Boards ${s.startBoard}–${s.startBoard + 3}</strong>. Type the number of the first board; the other three follow on.</p>
+    <p>This table is playing <strong>Boards ${s.startBoard}–${s.startBoard + 3}</strong>. Type any board number of the set you are playing; boards go in sets of four (1–4, 5–8, 9–12 …).</p>
     <label class="lbl" for="bnIn">First board number</label>
     <div class="stepper"><button type="button" class="step" data-bstep="-1" aria-label="Lower">−</button>
       <input id="bnIn" class="input center" inputmode="numeric" pattern="[0-9]*" maxlength="3" value="${s.startBoard}">
@@ -597,10 +602,11 @@ function boardNumbersSheet(s, after) {
     <p class="err small" id="bnErr" role="alert"></p>
     <button class="btn primary big block" id="bnSave">Save board numbers</button>`, (root) => {
     const inp = root.querySelector('#bnIn'), line = root.querySelector('#bnLine'), err = root.querySelector('#bnErr');
-    const val = () => parseInt(inp.value, 10);
+    const val = () => { const n = parseInt(inp.value, 10); return n >= 1 ? setStartFor(n) : NaN; };   // sets of four
     const show = () => { const v = val(); line.textContent = v >= 1 ? `Boards ${v}, ${v + 1}, ${v + 2} and ${v + 3}` : ''; err.textContent = ''; };
     inp.oninput = () => { inp.value = inp.value.replace(/\D/g, '').replace(/^0+/, '').slice(0, 3); show(); };
-    root.querySelectorAll('[data-bstep]').forEach((b) => (b.onclick = () => { inp.value = Math.min(999, Math.max(1, (val() || 1) + Number(b.dataset.bstep))); show(); }));
+    inp.onblur = () => { if (val() >= 1) inp.value = val(); };
+    root.querySelectorAll('[data-bstep]').forEach((b) => (b.onclick = () => { inp.value = Math.min(997, Math.max(1, (val() || 1) + 4 * Number(b.dataset.bstep))); show(); }));
     show();
     root.querySelector('#bnSave').onclick = async (ev) => {
       const v = val();
@@ -682,7 +688,7 @@ function renderGame(r) {
       const isNext = next && next.n === x.n;
       return `<div class="card board todo ${isNext ? 'next' : ''}">${head}
       <p class="muted">${isNext ? '<strong class="nextlbl">Next to enter</strong> · ' : ''}Deal ${x.n} · Dealer ${seatName(x.dealer)}</p>
-      <a class="btn block ${isNext ? 'primary' : ''}" href="#/deal/${s.id}/${x.n}">Start playing…</a></div>`;
+      <a class="btn block ${isNext ? 'go' : ''}" href="#/deal/${s.id}/${x.n}">Start playing…</a></div>`;
     }
     const sc = x.scored;
     return `<div class="card board res-${madeClass(x.d) || 'pass'}">${head}
@@ -706,8 +712,8 @@ function renderGame(r) {
     <td class="num tew">${x.d && x.scored.ewPoints ? x.scored.ewPoints : ''}</td>
     <td>${x.d ? `<a href="#/deal/${s.id}/${x.n}">Edit</a>` : ''}</td></tr>`).join('');
 
-  const nb = s.startBoard + 4;
-  const nextBtn = `<button class="btn primary big block" data-newgame>Play the next 4 boards ›<span class="btn-sub">Boards ${nb}–${nb + 3}</span></button>`;
+  const nb = setStartFor(s.startBoard) + 4;   // next set of four
+  const nextBtn = `<button class="btn go big block" data-newgame>Play the next 4 boards ›<span class="btn-sub">Boards ${nb}–${nb + 3}</span></button>`;
 
   $app.innerHTML = shell('play', `
     <header class="top">
@@ -743,7 +749,7 @@ function renderGame(r) {
     // In-app question (pop-up dialogs are blocked in some browsers)
     sheet((done === 4 ? `<h2>Play the next 4 boards</h2>
       <p>Your results at this table are saved. You probably want to set up the next round now.</p>
-      <button class="btn primary big block" id="leaveYes">Set up the next round (Boards ${nb}–${nb + 3})</button>
+      <button class="btn go big block" id="leaveYes">Set up the next round (Boards ${nb}–${nb + 3})</button>
       <button class="btn big block" id="leaveJoin">Join a table already started</button>`
       : `<h2>Leave this table?</h2>
       <p>${done} of 4 boards have been entered. They stay saved, and you can come back to this table from the Play screen.</p>
@@ -913,7 +919,7 @@ function renderEntry(r) {
     <div id="entryNote">${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}</div>
     <div id="entry"></div>
     <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${entryOthers(s, n)}</div></section>
-    <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
+    <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn go big" id="saveBtn">Save result</button></div>`);
   state.entry.draftKey = draftKey;
   state.entry.shownStart = s.startBoard;   // to notice another phone renumbering this table
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, () => render());

@@ -2,7 +2,7 @@ import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
   listEvents, resolveEvent, toEvent, authRole, getSettings, logEvent,
 } from './_lib.js';
-import { SEATS, boardNumberFor, pairKey } from '../lib/chicago.js';
+import { SEATS, boardNumberFor, pairKey, setStartFor } from '../lib/chicago.js';
 
 const SELECT = 'id,event_id,location,start_board,first_dealer,scoring,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
@@ -44,6 +44,7 @@ export default handler({
     requireAuth(req);
     const b = await readJson(req);
     const row = sessionFields(b, true);
+    row.start_board = setStartFor(row.start_board);   // sets of four: 1–4, 5–8 …
     await useKnownSpellings(row);
     const token = /^[0-9a-f-]{36}$/i.test(b.clientToken || '') ? b.clientToken : null;
     const ev = await resolveEvent(b.eventId);
@@ -98,6 +99,7 @@ export default handler({
       throw new HttpError(409, `Another phone has just changed this table to Boards ${cur.start_board}–${cur.start_board + 3}. Please check and try again.`,
         { session: toSession(cur) });
     }
+    if (b.startBoard != null && Number(b.startBoard) !== cur.start_board) b.startBoard = setStartFor(b.startBoard);
     const row = sessionFields({ ...toSession(cur), ...b }, true);
     await useKnownSpellings(row);
     const played = (cur.chi_deals || []).length > 0;

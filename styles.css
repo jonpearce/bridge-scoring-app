@@ -635,3 +635,14 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 /* set-up form: a name typed in two boxes */
 .input.dupe { border-color: #b3261e; box-shadow: 0 0 0 2px rgba(179,38,30,.15); }
 #nameErr:empty { display: none; }
+
+/* "Go" buttons — the ones that move you on (Start playing, Save result, Next board,
+   Back to your table, Play the next 4 boards). Bright green so they're easy to spot. */
+:root { --go: #13a34b; --go-dark: #0d7a37; }
+.btn.go {
+  background: var(--go); border-color: var(--go-dark); color: #fff; font-weight: 800;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .25);
+  box-shadow: 0 3px 0 var(--go-dark), 0 4px 10px rgba(19, 163, 75, .35);
+}
+.btn.go:active { background: var(--go-dark); transform: translateY(2px); box-shadow: 0 1px 0 var(--go-dark); }
+.btn.go:disabled { background: #b9c7bf; border-color: #a7b5ad; box-shadow: none; text-shadow: none; opacity: 1; color: #f4f7f5; }

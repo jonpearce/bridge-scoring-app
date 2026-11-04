@@ -80,7 +80,7 @@ before(async () => {
 });
 
 const newTable = {
-  location: 'Clubhouse, table 1', startBoard: 12, firstDealer: 'N',
+  location: 'Clubhouse, table 1', startBoard: 9, firstDealer: 'N',
   nsP1: 'Jon', nsP2: 'Mary', ewP1: 'Ann', ewP2: 'Bob', clientToken: crypto.randomUUID(),
 };
 let sid;
@@ -131,7 +131,7 @@ test('save four boards; scores are calculated on the server', async () => {
     got.push(r.body.deal);
   }
   assert.deepEqual(got.map((d) => d.nsScore), [140, -110, 90, -130]);   // phone's 99999 ignored
-  assert.deepEqual(got.map((d) => d.boardNum), [12, 13, 14, 15]);
+  assert.deepEqual(got.map((d) => d.boardNum), [9, 10, 11, 12]);
 });
 
 test('a second phone saving the same board is told, not allowed to overwrite', async () => {
@@ -195,20 +195,20 @@ test('a second game can record the same board independently', async () => {
   const s2 = await call(sessions, 'POST', { ...newTable, location: 'Table 2', nsP1: 'Cath', nsP2: 'Dave', ewP1: 'Eve', ewP2: 'Fay', clientToken: crypto.randomUUID() });
   const r = await call(deal, 'PUT', { sessionId: s2.body.session.id, dealNo: 1, level: 4, strain: 'H', declarer: 'S', tricks: 10 });
   assert.equal(r.status, 200);
-  assert.equal(r.body.deal.boardNum, 12);
+  assert.equal(r.body.deal.boardNum, 9);
   const day = await call(sessions, 'GET');
-  const plays = day.body.sessions.flatMap((s) => s.deals).filter((d) => d.boardNum === 12);
+  const plays = day.body.sessions.flatMap((s) => s.deals).filter((d) => d.boardNum === 9);
   assert.equal(plays.length, 2);
 });
 
 test('board numbers can change after play (saved boards move); dealer cannot', async () => {
   const was = T.chi_sessions.find((x) => x.id === sid).start_board;
-  const r = await call(sessions, 'PATCH', { id: sid, startBoard: 20 });
+  const r = await call(sessions, 'PATCH', { id: sid, startBoard: 21 });
   assert.equal(r.status, 200);
-  assert.equal(r.body.session.startBoard, 20);
+  assert.equal(r.body.session.startBoard, 21);
   const nums = T.chi_deals.filter((d) => d.session_id === sid).map((d) => [d.deal_no, d.board_num]);
-  assert.ok(nums.length > 0 && nums.every(([n, b]) => b === 19 + n));
-  assert.ok(r.body.session.deals.every((d) => d.boardNum === 19 + d.dealNo));
+  assert.ok(nums.length > 0 && nums.every(([n, b]) => b === 20 + n));
+  assert.ok(r.body.session.deals.every((d) => d.boardNum === 20 + d.dealNo));
   await call(sessions, 'PATCH', { id: sid, startBoard: was });   // put it back for later tests
   const d = await call(sessions, 'PATCH', { id: sid, firstDealer: 'W' });
   assert.equal(d.status, 409);
@@ -473,8 +473,8 @@ test('a second copy of the same table is refused, pointing at the first', async 
   assert.equal(again.body.existingId, first.body.session.id);
   assert.ok(!('logDetail' in again.body));
   assert.ok(T.chi_log.some((x) => x.kind === 'refused' && x.detail.status === 409 && x.detail.existingId === first.body.session.id));
-  // different board numbers (even overlapping) are a different table
-  const later = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 402, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
+  // a different set of boards is a different table
+  const later = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 405, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
   assert.equal(later.status, 201);
   // and the phone can choose to set up a separate table anyway
   const anyway = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 401, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', allowDuplicate: true, clientToken: crypto.randomUUID() });
@@ -514,4 +514,17 @@ test('activity log: server events, phone events, organiser-only reading', async 
   assert.ok(T.chi_log.some((x) => x.kind === 'login_failed'));
   assert.ok(!JSON.stringify(T.chi_log).includes('chess'));   // a wrong code typed is never stored
   await call(login, 'POST', { code: 'golf' });
+});
+
+test('board numbers go in sets of four (1–4, 5–8 …)', async () => {
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const t = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 7, nsP1: 'Ivy', nsP2: 'Jo', ewP1: 'Ken', ewP2: 'Lu', clientToken: crypto.randomUUID() });
+  assert.equal(t.body.session.startBoard, 5);
+  const c = await call(sessions, 'PATCH', { id: t.body.session.id, startBoard: 14, fromStartBoard: 5 });
+  assert.equal(c.body.session.startBoard, 13);
+  // an odd table already there keeps its numbers when only names change
+  const id = t.body.session.id;
+  T.chi_sessions.find((r) => r.id === id).start_board = 2;
+  const n = await call(sessions, 'PATCH', { id, ...newTable, nsP1: 'Ivy', nsP2: 'Jo', ewP1: 'Ken', ewP2: 'Lucy', startBoard: 2, fromStartBoard: 2 });
+  assert.equal(n.body.session.startBoard, 2);
 });

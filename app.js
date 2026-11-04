@@ -371,6 +371,7 @@ function renderNew(r) {
         <label class="lbl" id="themLbl">Opponents</label>
         <div class="ac"><input name="them1" class="input" placeholder="Player 1" value="${esc(v.them1)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="themLbl"></div>
         <div class="ac"><input name="them2" class="input" placeholder="Player 2" value="${esc(v.them2)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="themLbl"></div>
+        <p class="err small" id="nameErr" role="alert"></p>
       </section>
       <section class="card stack">
         <label class="lbl" for="sb">First board number</label>
@@ -389,6 +390,7 @@ function renderNew(r) {
   const f = document.getElementById('newForm');
   let dealer = v.firstDealer, side = mySide;
   const token = uuid();
+  let allowDuplicate = false;
   const sbInput = f.startBoard;
   const update = () => {
     const n = parseInt(sbInput.value, 10);
@@ -408,9 +410,31 @@ function renderNew(r) {
   f.querySelectorAll('[data-dealer]').forEach((b) => (b.onclick = () => { dealer = b.dataset.dealer; radio(f, '[data-dealer]', b); }));
   f.querySelectorAll('[data-side]').forEach((b) => (b.onclick = () => { side = b.dataset.side; radio(f, '[data-side]', b); update(); }));
   nameSuggest(f, ['us1', 'us2', 'them1', 'them2'], nameList);
+  // The same person can't sit in two seats: say so as soon as a name is repeated (any capitals).
+  const nameBoxes = ['us1', 'us2', 'them1', 'them2'].map((n) => f.elements[n]);
+  const nkey = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  const repeatedName = () => {
+    const keys = nameBoxes.map((i) => nkey(i.value));
+    const k = keys.find((x, i) => x && keys.indexOf(x) !== i);
+    return k ? nameBoxes[keys.indexOf(k)].value.trim() : null;
+  };
+  const checkNames = () => {
+    const rep = repeatedName();
+    const keys = nameBoxes.map((i) => nkey(i.value));
+    nameBoxes.forEach((i, n) => i.classList.toggle('dupe', !!keys[n] && keys.filter((x) => x === keys[n]).length > 1));
+    document.getElementById('nameErr').textContent = rep ? `${rep} is entered twice. Each player needs a different name.` : '';
+    return !rep;
+  };
+  nameBoxes.forEach((i) => i.addEventListener('input', checkNames));
+  nameBoxes.forEach((i) => i.addEventListener('change', checkNames));
 
   f.onsubmit = async (ev) => {
     ev.preventDefault();
+    if (!checkNames()) {
+      logEvent('name_entered_twice', { name: repeatedName() });
+      document.getElementById('nameErr').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
     const fd = Object.fromEntries(new FormData(f));
     const body = {
       startBoard: Math.max(1, parseInt(sbInput.value, 10) || 1), firstDealer: dealer,
@@ -421,7 +445,7 @@ function renderNew(r) {
     try {
       const out = editing
         ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body, fromStartBoard: editing.startBoard } })
-        : await api('sessions', { method: 'POST', body: { ...body, eventId: curEventId(), clientToken: token } });
+        : await api('sessions', { method: 'POST', body: { ...body, eventId: curEventId(), clientToken: token, ...(allowDuplicate ? { allowDuplicate: true } : {}) } });
       // The server may have used the spelling already in use (e.g. "Rob V" for "ROB V").
       const os = out.session;
       store.set('prefs', { names: side === 'NS' ? [os.nsP1, os.nsP2] : [os.ewP1, os.ewP2] });
@@ -437,7 +461,10 @@ function renderNew(r) {
       if (e.status === 409 && e.body?.existingId) {
         // The other pair already set this table up: join it rather than make a second copy.
         sheet(`<h2>This table is already set up</h2><p>${esc(e.message)}</p>
-          <button class="btn primary big block" id="joinIt">Join that table</button>`, (root) => {
+          <p class="muted small">If the other pair set it up, join it. If this really is a different game, set up a separate table.</p>
+          <button class="btn primary big block" id="joinIt">Join that table</button>
+          <button class="btn big block" id="newAnyway">Set up a separate table</button>`, (root) => {
+          root.querySelector('#newAnyway').onclick = () => { closeSheet(); allowDuplicate = true; f.requestSubmit(); };
           root.querySelector('#joinIt').onclick = async () => {
             closeSheet();
             try { await loadDay(); } catch { /* use what we have */ }
@@ -500,7 +527,7 @@ function nameSuggest(form, fields, names) {
       active = -1; list.hidden = false; inp.setAttribute('aria-expanded', 'true');
     };
     const pick = (k) => {
-      inp.value = shown[k]; close();
+      inp.value = shown[k]; close(); inp.dispatchEvent(new Event("change"));
       const next = inputs.slice(i + 1).find((o) => !o.value.trim());
       if (next) next.focus(); else inp.blur();
     };
@@ -1619,7 +1646,7 @@ const LOG_WORDS = {
   table_changed: 'Changed the table', board_numbers_changed: 'Changed board numbers', board_saved: 'Saved a board',
   board_corrected: 'Corrected a board', refused: 'Refused', error: 'Server error', phone_error: 'Phone error',
   no_connection: 'No connection', screen: 'Went to', start_again: 'Start again', joined_table: 'Joined a table',
-  swapped_side: 'Swapped side', joined_instead_of_duplicate: 'Joined the table already set up', left_table: 'Left the table', stale_board_numbers_fixed: 'Board numbers caught up',
+  swapped_side: 'Swapped side', name_entered_twice: 'Name entered twice (stopped on the phone)', joined_instead_of_duplicate: 'Joined the table already set up', left_table: 'Left the table', stale_board_numbers_fixed: 'Board numbers caught up',
 };
 const screenName = (h) => {
   const [n, a, b] = String(h || '').replace(/^#\//, '').split('/');

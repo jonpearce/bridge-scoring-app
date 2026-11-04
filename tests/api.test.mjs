@@ -468,14 +468,18 @@ test('a second copy of the same table is refused, pointing at the first', async 
   const ev = (await call(sessions, 'GET')).body.event.id;
   const first = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 401, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
   // the other pair sets it up from their side, names in another order
-  const again = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 402, nsP1: 'Dee', nsP2: 'cal', ewP1: 'Ben', ewP2: 'Ann', clientToken: crypto.randomUUID() });
+  const again = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 401, nsP1: 'Dee', nsP2: 'cal', ewP1: 'Ben', ewP2: 'Ann', clientToken: crypto.randomUUID() });
   assert.equal(again.status, 409);
   assert.equal(again.body.existingId, first.body.session.id);
   assert.ok(!('logDetail' in again.body));
   assert.ok(T.chi_log.some((x) => x.kind === 'refused' && x.detail.status === 409 && x.detail.existingId === first.body.session.id));
-  // the same pairs on different boards is a new table
-  const later = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 405, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
+  // different board numbers (even overlapping) are a different table
+  const later = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 402, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
   assert.equal(later.status, 201);
+  // and the phone can choose to set up a separate table anyway
+  const anyway = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 401, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', allowDuplicate: true, clientToken: crypto.randomUUID() });
+  assert.equal(anyway.status, 201);
+  assert.ok(T.chi_log.some((x) => x.session_id === anyway.body.session.id && x.detail.setUpAnyway === true));
 });
 
 test('a form opened before another phone renumbered the table cannot undo it', async () => {

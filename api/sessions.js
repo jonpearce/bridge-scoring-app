@@ -52,13 +52,15 @@ export default handler({
     if (again) return send(res, 201, { session: toSession(again) });
     // The other pair may already have set up this table: same four players,
     // overlapping boards, same session. Send them to it instead of making a second copy.
-    const same = (await db(`chi_sessions?event_id=eq.${ev.id}&select=id,start_board,ns_p1,ns_p2,ew_p1,ew_p2`)).find((x) => {
+    // Only the exact same boards count, and the phone can still choose "set up a separate table".
+    const same = b.allowDuplicate ? null : (await db(`chi_sessions?event_id=eq.${ev.id}&select=id,start_board,ns_p1,ns_p2,ew_p1,ew_p2,chi_deals(deal_no)`)).find((x) => {
       const a = [pairKey(x.ns_p1, x.ns_p2), pairKey(x.ew_p1, x.ew_p2)].sort().join('|');
       const c = [pairKey(row.ns_p1, row.ns_p2), pairKey(row.ew_p1, row.ew_p2)].sort().join('|');
-      return a === c && Math.abs(x.start_board - row.start_board) < 4;
+      return a === c && x.start_board === row.start_board;
     });
     if (same) {
-      throw new HttpError(409, `This table has already been set up (Boards ${same.start_board}–${same.start_board + 3}). Join it instead.`,
+      const done = (same.chi_deals || []).length;
+      throw new HttpError(409, `${same.ns_p1} & ${same.ns_p2} v ${same.ew_p1} & ${same.ew_p2} on Boards ${same.start_board}–${same.start_board + 3} has already been set up (${done} of 4 boards entered).`,
         { existingId: same.id, logDetail: { existingId: same.id } });
     }
     // How this table is scored is fixed now, from the organiser's switch.
@@ -75,7 +77,7 @@ export default handler({
     if (!s) throw new HttpError(500, 'Could not create the session');
     await logEvent(req, 'table_set_up', {
       boards: `${s.start_board}–${s.start_board + 3}`, ns: `${s.ns_p1} & ${s.ns_p2}`, ew: `${s.ew_p1} & ${s.ew_p2}`,
-      firstDealer: s.first_dealer, scoring: s.scoring || 'chicago',
+      firstDealer: s.first_dealer, scoring: s.scoring || 'chicago', ...(b.allowDuplicate ? { setUpAnyway: true } : {}),
       ...(row.ns_p1 !== cleanName(b.nsP1) || row.ns_p2 !== cleanName(b.nsP2) || row.ew_p1 !== cleanName(b.ewP1) || row.ew_p2 !== cleanName(b.ewP2)
         ? { typed: [b.nsP1, b.nsP2, b.ewP1, b.ewP2].map((n) => cleanName(n)).join(', ') } : {}),
     }, { sessionId: s.id, eventId: ev.id });

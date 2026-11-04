@@ -631,3 +631,7 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .lg.bad .lg-x strong { color: #b3261e; }
 .lg.nav { opacity: .75; }
 .lg-opt { display: flex; gap: 6px; align-items: center; }
+
+/* set-up form: a name typed in two boxes */
+.input.dupe { border-color: #b3261e; box-shadow: 0 0 0 2px rgba(179,38,30,.15); }
+#nameErr:empty { display: none; }

@@ -169,9 +169,12 @@ async function render() {
   const r = route();
   if (r.name === 'login') return renderLogin();
   if (!state.data) {
-    $app.innerHTML = shell('play', '<p class="muted center pad">Loading…</p>');
-    try { await loadDay(); } catch (e) { if (e.status !== 401) $app.innerHTML = shell('play', errorBlock(e.message)); return; }
+    const opening = document.body.classList.contains('splash') || !$app.innerHTML.trim();
+    if (opening) { setSplash(true); $app.innerHTML = splashHtml('<p class="splash-wait">Loading…</p>'); }
+    else $app.innerHTML = shell('play', '<p class="muted center pad">Loading…</p>');
+    try { await loadDay(); } catch (e) { setSplash(false); if (e.status !== 401) $app.innerHTML = shell('play', errorBlock(e.message)); return; }
   }
+  setSplash(false);
   const screens = { home: renderHome, play: renderPlay, new: renderNew, edit: renderNew, s: renderGame, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
   await (screens[r.name] || renderPlay)(r);
   window.scrollTo(0, 0);
@@ -232,14 +235,19 @@ function vulBadge(v) {
 // =============================================================
 //  Login
 // =============================================================
+// Opening screen (login, and the moment the app starts): dark green like an app's splash screen.
+const splashHtml = (below = '') => `<main class="screen login">
+    <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Bridge</h1><p class="muted">Four-deal scoring for social bridge</p></div>${below}</main>`;
+const setSplash = (on) => document.body.classList.toggle('splash', on);
 function renderLogin() {
+  setSplash(true);
   $app.innerHTML = `<main class="screen login">
     <div class="brand"><div class="logo" aria-hidden="true">♠♥<br>♦♣</div><h1>Flinders Bridge</h1><p class="muted">Four-deal scoring for social bridge</p></div>
     <form class="card" id="loginForm">
       <label for="code" class="lbl">Access code</label>
       <input id="code" class="input big" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" required>
       <p id="loginErr" class="err" role="alert"></p>
-      <button class="btn primary big" type="submit">Enter</button>
+      <button class="btn go big" type="submit">Enter</button>
     </form></main>`;
   const f = document.getElementById('loginForm');
   f.code.focus();
@@ -1756,12 +1764,13 @@ async function refresh() {
 
 // ---------- start ----------
 (async () => {
+  setSplash(true); $app.innerHTML = splashHtml('<p class="splash-wait">Loading…</p>');
   try {
     const { ok, admin } = await api('login');
     state.admin = !!admin;
     if (!ok) return go('#/login');
   } catch (e) {
-    $app.innerHTML = `<main class="screen">${errorBlock(e.message)}</main>`;
+    setSplash(false); $app.innerHTML = `<main class="screen">${errorBlock(e.message)}</main>`;
     return;
   }
   if (!location.hash || location.hash === '#/login' || location.hash === '#/play') location.hash = '#/home';

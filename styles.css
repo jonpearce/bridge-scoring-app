@@ -651,3 +651,12 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 .card.rank.me { background: #fff6cf; border: 2px solid var(--gold); box-shadow: 0 0 0 3px rgba(181, 139, 51, .18); }
 .card.rank.me .rv { color: var(--green); }
 .you-pill { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 99px; background: var(--gold); color: #fff; font: 700 .78rem var(--sans); vertical-align: middle; }
+
+/* Opening screen: inverted colours, like an app splash screen */
+body.splash { background: var(--green); }
+body.splash .login .brand h1 { color: var(--gold-soft); font-size: 2.2rem; }
+body.splash .login .brand .muted { color: #cfe0d6; }
+body.splash .logo { background: var(--gold-soft); color: var(--green); width: 104px; height: 104px; font-size: 32px; border-radius: 26px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+body.splash .login form.card { box-shadow: 0 10px 30px rgba(0,0,0,.3); border-color: transparent; }
+body.splash .login .card.error, body.splash .login .card.sleep { margin-top: 16px; }
+.splash-wait { text-align: center; color: #cfe0d6; margin-top: 18px; letter-spacing: .05em; }

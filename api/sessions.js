@@ -1,10 +1,10 @@
 import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
-  listEvents, resolveEvent, toEvent, authRole, getSettings,
+  listEvents, resolveEvent, toEvent, authRole, getSettings, logEvent,
 } from './_lib.js';
-import { SEATS, boardNumberFor } from '../lib/chicago.js';
+import { SEATS, boardNumberFor, pairKey } from '../lib/chicago.js';
 
-const SELECT = 'id,location,start_board,first_dealer,scoring,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
+const SELECT = 'id,event_id,location,start_board,first_dealer,scoring,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
 // GET   /api/sessions?event=ID  → every table (with boards) in that playing session
 //                                 (newest session if no ID), plus the list of sessions
@@ -44,8 +44,23 @@ export default handler({
     requireAuth(req);
     const b = await readJson(req);
     const row = sessionFields(b, true);
+    await useKnownSpellings(row);
     const token = /^[0-9a-f-]{36}$/i.test(b.clientToken || '') ? b.clientToken : null;
     const ev = await resolveEvent(b.eventId);
+    // A double tap (same token) just returns the table already made.
+    const again = token && (await db(`chi_sessions?client_token=eq.${token}&select=${SELECT}`))[0];
+    if (again) return send(res, 201, { session: toSession(again) });
+    // The other pair may already have set up this table: same four players,
+    // overlapping boards, same session. Send them to it instead of making a second copy.
+    const same = (await db(`chi_sessions?event_id=eq.${ev.id}&select=id,start_board,ns_p1,ns_p2,ew_p1,ew_p2`)).find((x) => {
+      const a = [pairKey(x.ns_p1, x.ns_p2), pairKey(x.ew_p1, x.ew_p2)].sort().join('|');
+      const c = [pairKey(row.ns_p1, row.ns_p2), pairKey(row.ew_p1, row.ew_p2)].sort().join('|');
+      return a === c && Math.abs(x.start_board - row.start_board) < 4;
+    });
+    if (same) {
+      throw new HttpError(409, `This table has already been set up (Boards ${same.start_board}–${same.start_board + 3}). Join it instead.`,
+        { existingId: same.id, logDetail: { existingId: same.id } });
+    }
     // How this table is scored is fixed now, from the organiser's switch.
     // Only written when Rubber, so Chicago tables are created exactly as before.
     const { scoringMode } = await getSettings();
@@ -58,6 +73,12 @@ export default handler({
     // A repeat tap returns nothing (duplicate ignored) — fetch the original.
     const s = made[0] || (token && (await db(`chi_sessions?client_token=eq.${token}&select=${SELECT}`))[0]);
     if (!s) throw new HttpError(500, 'Could not create the session');
+    await logEvent(req, 'table_set_up', {
+      boards: `${s.start_board}–${s.start_board + 3}`, ns: `${s.ns_p1} & ${s.ns_p2}`, ew: `${s.ew_p1} & ${s.ew_p2}`,
+      firstDealer: s.first_dealer, scoring: s.scoring || 'chicago',
+      ...(row.ns_p1 !== cleanName(b.nsP1) || row.ns_p2 !== cleanName(b.nsP2) || row.ew_p1 !== cleanName(b.ewP1) || row.ew_p2 !== cleanName(b.ewP2)
+        ? { typed: [b.nsP1, b.nsP2, b.ewP1, b.ewP2].map((n) => cleanName(n)).join(', ') } : {}),
+    }, { sessionId: s.id, eventId: ev.id });
     send(res, 201, { session: toSession(s) });
   },
 
@@ -67,7 +88,16 @@ export default handler({
     if (!/^[0-9a-f-]{36}$/i.test(b.id || '')) throw new HttpError(400, 'Missing session id');
     const cur = (await db(`chi_sessions?id=eq.${b.id}&select=${SELECT}`))[0];
     if (!cur) throw new HttpError(404, 'Session not found');
+    req.logSessionId = cur.id;
+    // Board numbers only change when this phone actually changed them: a form
+    // opened before another phone renumbered the table must not undo that.
+    if (b.fromStartBoard != null && Number(b.startBoard) === Number(b.fromStartBoard)) delete b.startBoard;
+    if (b.fromStartBoard != null && b.startBoard != null && Number(b.fromStartBoard) !== cur.start_board) {
+      throw new HttpError(409, `Another phone has just changed this table to Boards ${cur.start_board}–${cur.start_board + 3}. Please check and try again.`,
+        { session: toSession(cur) });
+    }
     const row = sessionFields({ ...toSession(cur), ...b }, true);
+    await useKnownSpellings(row);
     const played = (cur.chi_deals || []).length > 0;
     if (played && row.first_dealer !== cur.first_dealer) {
       throw new HttpError(409, 'The first dealer can’t be changed once a board has been recorded.');
@@ -81,6 +111,9 @@ export default handler({
       }
     }
     const upd = await db(`chi_sessions?id=eq.${b.id}&select=${SELECT}`, { method: 'PATCH', body: row, prefer: 'return=representation' });
+    const changed = {};
+    for (const k of ['start_board', 'first_dealer', 'ns_p1', 'ns_p2', 'ew_p1', 'ew_p2']) if (row[k] !== cur[k]) changed[k] = `${cur[k]} → ${row[k]}`;
+    await logEvent(req, changed.start_board ? 'board_numbers_changed' : 'table_changed', changed, { sessionId: cur.id, eventId: cur.event_id });
     send(res, 200, { session: toSession(upd[0]) });
   },
 });
@@ -117,6 +150,29 @@ export function nameLists(rows, hiddenRows, addedRows = []) {
       .sort((a, b) => String(b[1].at).localeCompare(String(a[1].at))).map(([, x]) => x.name),
     hidden: hiddenRows.filter((h) => stillHidden(h.name_key)).map((h) => h.name),
   };
+}
+
+// A name typed with different capitals or spacing ("ROB V", "rob  v") is the
+// same person: use the spelling already in use (or the organiser's correction).
+const nameKey = (n) => cleanName(n).toLowerCase();
+async function useKnownSpellings(row) {
+  const [rows, added, fixes] = await Promise.all([
+    db('chi_sessions?select=ns_p1,ns_p2,ew_p1,ew_p2,created_at&order=created_at.desc&limit=2000'),
+    db('chi_added_names?select=name_key,name,added_at'),
+    db('chi_name_fixes?select=from_key,to_name'),
+  ]);
+  const known = new Map();
+  for (const a of added) known.set(a.name_key, a.name);
+  for (const [k, v] of lastUse(rows)) known.set(k, v.name);   // most recent spelling wins
+  for (const f of fixes) known.set(f.from_key, f.to_name);
+  for (const k of ['ns_p1', 'ns_p2', 'ew_p1', 'ew_p2']) {
+    const hit = known.get(nameKey(row[k]));
+    if (hit) row[k] = cleanName(hit);
+  }
+  const keys = ['ns_p1', 'ns_p2', 'ew_p1', 'ew_p2'].map((k) => nameKey(row[k]));
+  const twice = keys.find((k, i) => keys.indexOf(k) !== i);
+  if (twice) throw new HttpError(400, `${row[['ns_p1', 'ns_p2', 'ew_p1', 'ew_p2'][keys.indexOf(twice)]]} is entered twice. Each player needs a different name.`);
+  row.location = cleanName(`${row.ns_p1} & ${row.ns_p2} v ${row.ew_p1} & ${row.ew_p2}`, 80);
 }
 
 function sessionFields(b, strict) {

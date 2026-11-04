@@ -1,4 +1,4 @@
-import { handler, send, readJson, requireAuth, db, HttpError, toDeal, getSettings } from './_lib.js';
+import { handler, send, readJson, requireAuth, db, HttpError, toDeal, getSettings, logEvent } from './_lib.js';
 import { scoreDeal, validateDeal, boardNumberFor, vulnerabilityFor, SCORING_VERSION } from '../lib/chicago.js';
 import { scoreRubberTable } from '../lib/rubber.js';
 
@@ -15,8 +15,9 @@ export default handler({
     const dealNo = Number(b.dealNo);
     if (![1, 2, 3, 4].includes(dealNo)) throw new HttpError(400, 'Deal must be 1–4');
 
-    const sess = (await db(`chi_sessions?id=eq.${b.sessionId}&select=id,start_board,first_dealer,scoring`))[0];
+    const sess = (await db(`chi_sessions?id=eq.${b.sessionId}&select=id,event_id,start_board,first_dealer,scoring,created_at`))[0];
     if (!sess) throw new HttpError(404, 'Session not found');
+    req.logSessionId = sess.id;
 
     const deal = b.passedOut
       ? { dealNo, passedOut: true }
@@ -31,7 +32,7 @@ export default handler({
     // the default, a correction keeps whatever the board already had.
     const rubber = sess.scoring === 'rubber';
     let table = null, othersAtTable = [];
-    const def = vulnerabilityFor(dealNo, sess.first_dealer);
+    const def = vulnerabilityFor(dealNo, sess.first_dealer, sess.created_at);
     const { vulLocked } = rubber ? {} : await getSettings();
     if (rubber) {
       // Rubber: vulnerability comes from the games already won at this table.
@@ -84,7 +85,7 @@ export default handler({
     if (!saved.length) {
       const current = (await db(`chi_deals?${key}`))[0];
       throw new HttpError(409, 'This board was just saved or changed on another phone. Please check it.', {
-        current: current ? toDeal(current) : null,
+        current: current ? toDeal(current) : null, logDetail: { deal: dealNo, wasCorrection: !!b.expectedUpdatedAt },
       });
     }
     // Rubber: this board can change the later boards' vulnerability and scores.
@@ -98,6 +99,10 @@ export default handler({
         }
       }
     }
+    await logEvent(req, b.expectedUpdatedAt ? 'board_corrected' : 'board_saved', {
+      board: row.board_num, deal: dealNo, result: deal.passedOut ? 'Passed out' : `${deal.level}${deal.strain}${deal.doubled || ''} by ${deal.declarer}, ${deal.tricks} tricks`,
+      vul: `${deal.vulNs ? 'NS' : '-'}/${deal.vulEw ? 'EW' : '-'}`, nsScore: scored.nsScore,
+    }, { sessionId: sess.id, eventId: sess.event_id });
     send(res, 200, { deal: toDeal(saved[0]) });
   },
 });

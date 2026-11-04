@@ -9,10 +9,10 @@ process.env.SUPABASE_URL = 'https://fake.supabase.test';
 process.env.ADMIN_CODE = 'Boss';
 
 // ---------- fake PostgREST ----------
-const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [], chi_added_names: [], chi_settings: [], chi_name_fixes: [] };
+const T = { chi_events: [], chi_sessions: [], chi_deals: [], chi_hidden_names: [], chi_added_names: [], chi_settings: [], chi_name_fixes: [], chi_log: [] };
 let clock = Date.parse('2026-10-12T10:00:00Z');
 const now = () => new Date((clock += 1000)).toISOString();
-const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'], chi_added_names: ['name_key'], chi_settings: ['key'], chi_name_fixes: ['from_key'] };
+const UNIQUE = { chi_events: ['play_date', 'name'], chi_sessions: ['client_token'], chi_deals: ['session_id', 'deal_no'], chi_hidden_names: ['name_key'], chi_added_names: ['name_key'], chi_settings: ['key'], chi_name_fixes: ['from_key'], chi_log: ['__never'] };
 
 function parse(url) {
   const u = new URL(url);
@@ -70,8 +70,9 @@ async function call(mod, method, body, query = '') {
   return { status: res.statusCode, body: JSON.parse(res.out) };
 }
 
-let login, sessions, deal, admin;
+let login, sessions, deal, admin, logApi;
 before(async () => {
+  logApi = await import('../api/log.js');
   login = await import('../api/login.js');
   admin = await import('../api/admin.js');
   sessions = await import('../api/sessions.js');
@@ -439,5 +440,74 @@ test('rubber: new tables only; vulnerability and scores come from games won', as
   assert.equal(T.chi_settings.some((x) => x.key === 'scoring_mode'), false);
   const c = await call(sessions, 'POST', { ...newTable, eventId: back.event.id, nsP1: 'Wyn', nsP2: 'Xia', ewP1: 'Yan', ewP2: 'Zed', clientToken: crypto.randomUUID() });
   assert.equal(c.body.session.scoring, 'chicago');
+  await call(login, 'POST', { code: 'golf' });
+});
+
+// ---------- 4 Nov 2026: names, duplicate tables, board numbers, activity log ----------
+test('names typed with different capitals use the spelling already in use', async () => {
+  await call(login, 'POST', { code: 'golf' });
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const a = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 101, nsP1: 'Rob V', nsP2: 'Lucinda', ewP1: 'Kay', ewP2: 'Sue', clientToken: crypto.randomUUID() });
+  assert.equal(a.status, 201);
+  const b = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 201, nsP1: 'ROB  v', nsP2: 'lucinda', ewP1: 'Kay', ewP2: 'Sue', clientToken: crypto.randomUUID() });
+  assert.equal(b.status, 201);
+  assert.equal(b.body.session.nsP1, 'Rob V');
+  assert.equal(b.body.session.nsP2, 'Lucinda');
+  const log = T.chi_log.find((x) => x.session_id === b.body.session.id && x.kind === 'table_set_up');
+  assert.ok(log.detail.typed.includes('ROB v'));
+});
+
+test('the same player twice at one table is refused', async () => {
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const r = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 301, nsP1: 'Rob V', nsP2: 'rob v', ewP1: 'Kay', ewP2: 'Sue', clientToken: crypto.randomUUID() });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /entered twice/);
+});
+
+test('a second copy of the same table is refused, pointing at the first', async () => {
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const first = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 401, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
+  // the other pair sets it up from their side, names in another order
+  const again = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 402, nsP1: 'Dee', nsP2: 'cal', ewP1: 'Ben', ewP2: 'Ann', clientToken: crypto.randomUUID() });
+  assert.equal(again.status, 409);
+  assert.equal(again.body.existingId, first.body.session.id);
+  assert.ok(!('logDetail' in again.body));
+  assert.ok(T.chi_log.some((x) => x.kind === 'refused' && x.detail.status === 409 && x.detail.existingId === first.body.session.id));
+  // the same pairs on different boards is a new table
+  const later = await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 405, nsP1: 'Ann', nsP2: 'Ben', ewP1: 'Cal', ewP2: 'Dee', clientToken: crypto.randomUUID() });
+  assert.equal(later.status, 201);
+});
+
+test('a form opened before another phone renumbered the table cannot undo it', async () => {
+  const ev = (await call(sessions, 'GET')).body.event.id;
+  const t = (await call(sessions, 'POST', { ...newTable, eventId: ev, startBoard: 501, nsP1: 'Eve', nsP2: 'Fay', ewP1: 'Gus', ewP2: 'Hal', clientToken: crypto.randomUUID() })).body.session;
+  // phone B renumbers 501 → 509
+  assert.equal((await call(sessions, 'PATCH', { id: t.id, startBoard: 509, fromStartBoard: 501 })).status, 200);
+  // phone A saves names from a form that still showed 501: names change, boards stay 509
+  const a = await call(sessions, 'PATCH', { id: t.id, ...newTable, nsP1: 'Eve', nsP2: 'Fay', ewP1: 'Gus', ewP2: 'Hally', startBoard: 501, fromStartBoard: 501 });
+  assert.equal(a.status, 200);
+  assert.equal(a.body.session.startBoard, 509);
+  assert.equal(a.body.session.ewP2, 'Hally');
+  // phone A tries to renumber from its stale 501: refused, told the current numbers
+  const c = await call(sessions, 'PATCH', { id: t.id, startBoard: 513, fromStartBoard: 501 });
+  assert.equal(c.status, 409);
+  assert.equal(c.body.session.startBoard, 509);
+  assert.ok(T.chi_log.some((x) => x.kind === 'board_numbers_changed' && x.session_id === t.id && x.detail.start_board === '501 → 509'));
+});
+
+test('activity log: server events, phone events, organiser-only reading', async () => {
+  const before = T.chi_log.length;
+  const r = await call(logApi, 'POST', { events: [{ kind: 'screen', detail: { to: '#/play' } }, { kind: 'phone_error', detail: { message: 'x' } }] });
+  assert.equal(r.status, 200);
+  assert.equal(T.chi_log.length, before + 2);
+  assert.equal(T.chi_log.at(-1).source, 'phone');
+  assert.equal((await call(logApi, 'GET')).status, 403);
+  await call(login, 'POST', { code: 'Boss' });
+  const g = await call(logApi, 'GET');
+  assert.equal(g.status, 200);
+  assert.ok(g.body.entries.length > 5);
+  assert.ok(T.chi_log.some((x) => x.kind === 'board_saved'));
+  assert.ok(T.chi_log.some((x) => x.kind === 'login_failed'));
+  assert.ok(!JSON.stringify(T.chi_log).includes('chess'));   // a wrong code typed is never stored
   await call(login, 'POST', { code: 'golf' });
 });

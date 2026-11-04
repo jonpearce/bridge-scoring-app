@@ -42,7 +42,15 @@ export function handler(methods) {
     } catch (e) {
       const status = e.status || 500;
       if (status >= 500) console.error(e);
-      send(res, status, { error: e.message || 'Something went wrong', ...(e.extra || {}) });
+      // Log refusals and failures (not "please log in"), so problems can be traced later.
+      if (status !== 401 && !req.skipLog) {
+        await logEvent(req, status >= 500 ? 'error' : 'refused', {
+          path: (req.url || '').split('?')[0], method: req.method, status, message: e.message || String(e),
+          ...(e.extra?.logDetail || {}),
+        }, { sessionId: req.logSessionId });
+      }
+      const { logDetail, ...extra } = e.extra || {};
+      send(res, status, { error: e.message || 'Something went wrong', ...extra });
     }
   };
 }
@@ -58,6 +66,27 @@ export function keyKind() {
     } catch { return 'unknown'; }
   }
   return 'unknown';
+}
+
+// ---------- activity log (chi_log) ----------
+// Never lets logging break or slow the app: gives up after 1.5 s, ignores failures.
+const hdr = (req, k) => String(req.headers?.[k] || '');
+export const deviceOf = (req) => (/^[A-Za-z0-9-]{4,64}$/.test(hdr(req, 'x-device')) ? hdr(req, 'x-device') : null);
+export async function logEvent(req, kind, detail = {}, { sessionId = null, eventId = null, source = 'server', at = null } = {}) {
+  const json = JSON.stringify(detail ?? {});
+  let who = hdr(req, 'x-who');
+  try { who = decodeURIComponent(who); } catch { /* keep raw */ }
+  const row = {
+    device: deviceOf(req), who: cleanName(who, 80) || null, role: authRole(req) || 'none',
+    kind: cleanName(kind, 60) || 'unknown', session_id: /^[0-9a-f-]{36}$/i.test(sessionId || '') ? sessionId : null,
+    event_id: /^[0-9a-f-]{36}$/i.test(eventId || '') ? eventId : null, source,
+    ...(at ? { at } : {}),
+    detail: json.length > 4000 ? { truncated: true, start: json.slice(0, 3800) } : JSON.parse(json),
+  };
+  try {
+    const write = db('chi_log', { method: 'POST', body: row }).catch(() => {});   // a late failure is ignored too
+    await Promise.race([write, new Promise((r) => setTimeout(r, 1500))]);
+  } catch { /* the log must never get in the way */ }
 }
 
 // ---------- access code + session cookie ----------

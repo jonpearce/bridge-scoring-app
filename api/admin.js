@@ -1,4 +1,4 @@
-import { handler, send, readJson, requireAdmin, db, HttpError, getEvent, createEvent, toEvent, cleanName, pruneEmptyEvents } from './_lib.js';
+import { handler, send, readJson, requireAdmin, db, HttpError, getEvent, createEvent, toEvent, cleanName, pruneEmptyEvents, logEvent } from './_lib.js';
 
 // Organiser-only actions. Every request must carry the organiser cookie.
 // POST /api/admin { action: 'deleteGame', id }       → deletes one game and its boards
@@ -16,6 +16,17 @@ export default handler({
   POST: async (req, res) => {
     requireAdmin(req);
     const b = await readJson(req);
+    // Every organiser action goes in the activity log. A deleted table is copied
+    // into the log in full, so it can be put back by hand if it was a mistake.
+    if (!b.dryRun) {
+      let snapshot;
+      if (b.action === 'deleteGame' && UUID.test(b.id || '')) {
+        snapshot = (await db(`chi_sessions?id=eq.${b.id}&select=*,chi_deals(*)`))[0];
+      }
+      const { action, ...rest } = b;
+      await logEvent(req, `organiser_${cleanName(action, 40)}`, { ...rest, ...(snapshot ? { deletedTable: snapshot } : {}) },
+        { sessionId: b.id && UUID.test(b.id) ? b.id : null, eventId: b.eventId || snapshot?.event_id || null });
+    }
 
     if (b.action === 'deleteGame') {
       if (!UUID.test(b.id || '')) throw new HttpError(400, 'Missing table');

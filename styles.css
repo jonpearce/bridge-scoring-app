@@ -616,3 +616,18 @@ button, a, .btn, .key, .step, .vb.tap, .seg button, input, select { touch-action
 /* "No others have recorded this board yet." — kept to one line on phones */
 .none-yet { font-size: clamp(.82rem, 4.1vw, 1rem); white-space: nowrap; }
 .sp-suit { font-size: .8em; }
+
+/* Play start screen: way back to this phone's table */
+.your-table { border: 2px solid var(--green, #14402e); }
+.your-table h2 { margin-top: 0; }
+
+/* Organiser: activity log */
+.loglist { list-style: none; margin: 8px 0 12px; padding: 0; max-height: 60vh; overflow-y: auto; font-size: .9rem; }
+.loglist .lg { display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 6px 2px; border-bottom: 1px solid rgba(0,0,0,.08); }
+.lg-t { color: #6b6b6b; font-variant-numeric: tabular-nums; }
+.lg-w { font-weight: 600; }
+.lg-w small { font-weight: 400; color: #8a8a8a; }
+.lg-x { grid-column: 1 / -1; }
+.lg.bad .lg-x strong { color: #b3261e; }
+.lg.nav { opacity: .75; }
+.lg-opt { display: flex; gap: 6px; align-items: center; }

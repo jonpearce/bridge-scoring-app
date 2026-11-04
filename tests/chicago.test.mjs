@@ -103,10 +103,14 @@ test('every level 1–7 in every strain makes exactly without error', () => {
 // ---------- Chicago structure ----------
 
 test('club vulnerability: N/S, E/W, both, neither', () => {
-  assert.deepEqual(vulnerabilityFor(1, 'N'), { ns: true, ew: false });
-  assert.deepEqual(vulnerabilityFor(2, 'N'), { ns: false, ew: true });
-  assert.deepEqual(vulnerabilityFor(3, 'N'), { ns: true, ew: true });
-  assert.deepEqual(vulnerabilityFor(4, 'N'), { ns: false, ew: false });
+  assert.deepEqual(vulnerabilityFor(1, 'N'), { ns: false, ew: false });
+  assert.deepEqual(vulnerabilityFor(2, 'N'), { ns: true, ew: false });
+  assert.deepEqual(vulnerabilityFor(3, 'N'), { ns: false, ew: true });
+  assert.deepEqual(vulnerabilityFor(4, 'N'), { ns: true, ew: true });
+  // Tables set up before the 4 Nov change keep the 21 Oct order
+  assert.deepEqual(vulnerabilityFor(1, 'N', '2026-11-03T23:00:00Z'), { ns: true, ew: false });
+  assert.deepEqual(vulnerabilityFor(4, 'N', '2026-11-03T23:00:00Z'), { ns: false, ew: false });
+  assert.deepEqual(vulnerabilityFor(1, 'N', '2026-12-01T00:00:00Z'), { ns: false, ew: false });
 });
 
 test('vulnerability is the same whoever deals first', () => {
@@ -119,14 +123,14 @@ test('board numbers run consecutively from the starting board', () => {
 });
 
 test('declarer attribution and sign convention', () => {
-  const v = (d, dealNo = 4) => scoreDeal({ dealNo, level: 3, strain: 'NT', doubled: '', tricks: 9, declarer: d }, 'N');
+  const v = (d, dealNo = 1) => scoreDeal({ dealNo, level: 3, strain: 'NT', doubled: '', tricks: 9, declarer: d }, 'N');
   assert.equal(v('N').nsScore, 400);
   assert.equal(v('S').nsScore, 400);
   assert.equal(v('E').nsScore, -400);
   assert.equal(v('W').ewScore, 400);
   assert.equal(v('E').winner, 'EW');
   // defeated contract: the defenders gain
-  const down = scoreDeal({ dealNo: 4, level: 4, strain: 'S', doubled: 'X', tricks: 8, declarer: 'W' }, 'N');
+  const down = scoreDeal({ dealNo: 1, level: 4, strain: 'S', doubled: 'X', tricks: 8, declarer: 'W' }, 'N');
   assert.equal(down.nsScore, 300);
   assert.equal(down.ewScore, -300);
   assert.equal(down.winner, 'EW'); // E/W won the auction even though they went down
@@ -134,14 +138,16 @@ test('declarer attribution and sign convention', () => {
 });
 
 test('vulnerability is applied per deal to the declaring side', () => {
-  // Deal 2 → E/W vulnerable
-  const ew = scoreDeal({ dealNo: 2, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'E' }, 'N');
+  // Deal 3 → E/W vulnerable
+  const ew = scoreDeal({ dealNo: 3, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'E' }, 'N');
   assert.equal(ew.nsScore, -620);
-  const ns = scoreDeal({ dealNo: 2, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N' }, 'N');
+  const ns = scoreDeal({ dealNo: 3, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N' }, 'N');
   assert.equal(ns.nsScore, 420);
-  // Deal 3 both vulnerable; deal 4 neither
-  assert.equal(scoreDeal({ dealNo: 3, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'S' }, 'N').nsScore, 620);
-  assert.equal(scoreDeal({ dealNo: 4, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'S' }, 'N').nsScore, 420);
+  // Deal 2 N/S vulnerable; deal 4 both; deal 1 neither
+  assert.equal(scoreDeal({ dealNo: 2, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'S' }, 'N').nsScore, 620);
+  assert.equal(scoreDeal({ dealNo: 2, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'E' }, 'N').nsScore, -420);
+  assert.equal(scoreDeal({ dealNo: 4, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'S' }, 'N').nsScore, 620);
+  assert.equal(scoreDeal({ dealNo: 1, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'S' }, 'N').nsScore, 420);
 });
 
 test('passed-out deal scores zero and needs no contract', () => {
@@ -198,17 +204,17 @@ test('incomplete session is reported as incomplete', () => {
 // ---------- Day summary ----------
 
 test('only one pair scores on each board, never negative', () => {
-  const made = scoreDeal({ dealNo: 4, level: 3, strain: 'NT', doubled: '', tricks: 9, declarer: 'E' }, 'N');
+  const made = scoreDeal({ dealNo: 1, level: 3, strain: 'NT', doubled: '', tricks: 9, declarer: 'E' }, 'N');
   assert.equal(made.ewPoints, 400); assert.equal(made.nsPoints, 0); assert.equal(made.scoredBy, 'EW');
-  const down = scoreDeal({ dealNo: 4, level: 4, strain: 'S', doubled: '', tricks: 9, declarer: 'N' }, 'N');
+  const down = scoreDeal({ dealNo: 1, level: 4, strain: 'S', doubled: '', tricks: 9, declarer: 'N' }, 'N');
   assert.equal(down.ewPoints, 50); assert.equal(down.nsPoints, 0); assert.equal(down.scoredBy, 'EW');
   for (const d of [made, down]) { assert.ok(d.nsPoints >= 0 && d.ewPoints >= 0); assert.ok(d.nsPoints === 0 || d.ewPoints === 0); }
 });
 
 test('vulnerability can be changed on a board', () => {
-  const def = scoreDeal({ dealNo: 4, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N' }, 'N');
+  const def = scoreDeal({ dealNo: 1, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N' }, 'N');
   assert.equal(def.nsScore, 420);
-  const vul = scoreDeal({ dealNo: 4, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N', vulNs: true, vulEw: false }, 'N');
+  const vul = scoreDeal({ dealNo: 1, level: 4, strain: 'H', doubled: '', tricks: 10, declarer: 'N', vulNs: true, vulEw: false }, 'N');
   assert.equal(vul.nsScore, 620);
   assert.equal(vul.vulText, 'N/S vulnerable');
 });

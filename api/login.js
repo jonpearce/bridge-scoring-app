@@ -1,4 +1,4 @@
-import { handler, send, readJson, roleForCode, setAuthCookie, clearAuthCookie, authRole, HttpError } from './_lib.js';
+import { handler, send, readJson, roleForCode, setAuthCookie, clearAuthCookie, authRole, HttpError, logEvent } from './_lib.js';
 
 // GET    /api/login  → { ok, admin }  (is this phone already let in? as organiser?)
 // POST   /api/login  { code } → sets a 30-day cookie: players' code or organiser code
@@ -12,13 +12,17 @@ export default handler({
     const { code } = await readJson(req);
     const role = roleForCode(code);
     if (!role) {
+      await logEvent(req, 'login_failed', {});   // the code typed is never logged
+      req.skipLog = true;
       await new Promise((r) => setTimeout(r, 600)); // slow down guessing
       throw new HttpError(401, 'That code isn’t right. Please try again.');
     }
     setAuthCookie(res, role);
+    await logEvent(req, 'login', { as: role });
     send(res, 200, { ok: true, admin: role === 'admin' });
   },
   DELETE: async (req, res) => {
+    await logEvent(req, 'logout', {});
     clearAuthCookie(res);
     send(res, 200, { ok: false });
   },

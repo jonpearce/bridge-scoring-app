@@ -97,7 +97,7 @@ test('day summary can use rubber totals; Chicago tables unaffected', () => {
   const plain = daySummary([chicago]);
   const mixed = daySummary([chicago, rubber], (s) => (s.scoring === 'rubber'
     ? rubberTotals(scoreRubberTable(s.deals, s.firstDealer))
-    : daySummary.length && { played: s.deals.length, complete: false, nsPoints: 600, ewPoints: 0, leader: 'NS' }));
-  assert.equal(plain.find((r) => r.label === 'A & B').points, 600);   // Chicago 3NT vul = 600
-  assert.equal(mixed.find((r) => r.label === 'A & B').points, 600 + 100 + 300);
+    : daySummary.length && { played: s.deals.length, complete: false, nsPoints: 400, ewPoints: 0, leader: 'NS' }));
+  assert.equal(plain.find((r) => r.label === 'A & B').points, 400);   // Chicago deal 1 (neither vul) 3NT = 400
+  assert.equal(mixed.find((r) => r.label === 'A & B').points, 400 + 100 + 300);
 });

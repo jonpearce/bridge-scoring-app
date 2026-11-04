@@ -47,6 +47,40 @@ const store = {
   del(k) { try { localStorage.removeItem('chi:' + k); } catch { /* ignore */ } },
 };
 
+// ---------- activity log: what this phone did (read by the organiser) ----------
+// A random id for this phone, kept even by "Start again", so its events can be followed.
+function deviceId() {
+  let id = store.get('device');
+  if (!id) { id = (crypto.randomUUID?.() || String(Math.random()).slice(2) + Date.now()).replace(/[^A-Za-z0-9-]/g, ''); store.set('device', id); }
+  return id;
+}
+function logHeaders() {
+  const names = store.get('prefs', {}).names;
+  return { 'X-Device': deviceId(), ...(names?.[0] ? { 'X-Who': encodeURIComponent(names.filter(Boolean).join(' & ')) } : {}) };
+}
+const logQueue = [];
+let logTimer = null;
+function logEvent(kind, detail = {}) {
+  try {
+    logQueue.push({ kind, detail, at: new Date().toISOString(), eventId: state.data?.event?.id || null,
+      sessionId: detail.sessionId || store.get('my')?.sessionId || null });
+    if (logQueue.length > 60) logQueue.splice(0, logQueue.length - 60);
+    clearTimeout(logTimer);
+    logTimer = setTimeout(flushLog, 3000);
+  } catch { /* never let logging get in the way */ }
+}
+async function flushLog(keepalive = false) {
+  clearTimeout(logTimer);
+  while (logQueue.length) {
+    const batch = logQueue.splice(0, 20);
+    try { await api('log', { method: 'POST', body: { events: batch }, keepalive }); }
+    catch (e) { if (e.status === 0) { logQueue.unshift(...batch); logTimer = setTimeout(flushLog, 30000); } return; }
+  }
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && logQueue.length) flushLog(true); });
+window.addEventListener('error', (e) => logEvent('phone_error', { message: String(e.message).slice(0, 300), where: `${e.filename || ''}:${e.lineno || ''}`, screen: location.hash }));
+window.addEventListener('unhandledrejection', (e) => logEvent('phone_error', { message: String(e.reason?.message || e.reason).slice(0, 300), screen: location.hash }));
+
 // ---------- state ----------
 const state = { data: null, entry: null, admin: false };
 const curEventId = () => state.data?.event?.id;
@@ -67,11 +101,13 @@ async function api(path, opts = {}) {
   try {
     r = await fetch('/api/' + path, {
       method: opts.method || 'GET',
-      headers: opts.body ? { 'Content-Type': 'application/json' } : {},
+      headers: { ...(opts.body ? { 'Content-Type': 'application/json' } : {}), ...logHeaders() },
+      keepalive: !!opts.keepalive,
       body: opts.body ? JSON.stringify(opts.body) : undefined,
       credentials: 'same-origin',
     });
   } catch {
+    if (path !== 'log') logEvent('no_connection', { call: `${opts.method || 'GET'} ${path}` });
     throw new ApiError(0, 'No connection. Check your signal and try again.');
   }
   let body = {};
@@ -119,7 +155,10 @@ function toast(msg, kind = 'ok') {
 
 // ---------- routing ----------
 const go = (hash) => { if (location.hash !== hash) location.hash = hash; else render(); };
-window.addEventListener('hashchange', () => render());
+window.addEventListener('hashchange', (e) => {
+  logEvent('screen', { to: location.hash, from: (e.oldURL || '').split('#')[1] ? '#' + e.oldURL.split('#')[1] : '' });
+  render();
+});
 
 function route() {
   const parts = (location.hash || '#/play').slice(2).split('/');
@@ -133,7 +172,7 @@ async function render() {
     $app.innerHTML = shell('play', '<p class="muted center pad">Loading…</p>');
     try { await loadDay(); } catch (e) { if (e.status !== 401) $app.innerHTML = shell('play', errorBlock(e.message)); return; }
   }
-  const screens = { play: renderPlay, new: renderNew, edit: renderNew, s: renderGame, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
+  const screens = { home: renderHome, play: renderPlay, new: renderNew, edit: renderNew, s: renderGame, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
   await (screens[r.name] || renderPlay)(r);
   window.scrollTo(0, 0);
   if (state.scrollToNext && r.name === 's') {
@@ -212,7 +251,7 @@ function renderLogin() {
       state.admin = !!out.admin;
       state.data = null;
       if (out.admin) toast('Organiser mode: see Day summary');
-      go('#/play');
+      go('#/home');
     } catch (e) {
       document.getElementById('loginErr').textContent = e.message;
       btn.disabled = false; btn.textContent = 'Enter';
@@ -224,9 +263,17 @@ function renderLogin() {
 // =============================================================
 //  Play — home
 // =============================================================
-function renderPlay() {
+// Opening the app (or logging in): straight to this phone's table if it has one.
+function renderHome() {
   const m = mine();
   if (m && sessionById(m.sessionId)) return go(`#/s/${m.sessionId}`);
+  return go('#/play');
+}
+
+// The Play tab: always this start screen, from anywhere — a known place to get back to.
+function renderPlay() {
+  const m = mine();
+  const myTable = m && sessionById(m.sessionId);
   const games = state.data.sessions;
   const list = games.length
     ? games.slice().reverse().map((s) => {
@@ -239,9 +286,14 @@ function renderPlay() {
   const joinCard = games.length
     ? `<section class="card"><h2>…or join a table already started</h2><p class="muted small">If the other pair has already set up your table, tap it here.</p><div class="stack">${list}</div></section>`
     : '<section class="card"><p class="muted">No tables have started yet in this session.</p></section>';
+  const back = myTable ? `<section class="card your-table"><h2>Your table</h2>
+      <p><span class="tag ns">N/S</span> ${esc(pairLabel(myTable.nsP1, myTable.nsP2))}<br><span class="tag ew">E/W</span> ${esc(pairLabel(myTable.ewP1, myTable.ewP2))}</p>
+      <p class="muted small">Boards ${myTable.startBoard}–${myTable.startBoard + 3} · ${myTable.deals.length} of 4 entered</p>
+      <a class="btn primary big block" href="#/s/${myTable.id}">Back to your table ›</a></section>` : '';
   $app.innerHTML = shell('play', `
     <header class="top"><h1>Play</h1>${sessionPicker()}</header>
-    <a class="btn primary big block" href="#/new">Set up a new round…</a>
+    ${back}
+    <a class="btn ${myTable ? '' : 'primary'} big block" href="#/new">Set up a new round…</a>
     ${joinCard}
     ${restartButton()}
     ${logoutButton()}`);
@@ -252,6 +304,7 @@ function renderPlay() {
 function chooseSide(sessionId) {
   const s = sessionById(sessionId);
   const join = (side) => {
+    logEvent('joined_table', { sessionId, side });
     store.set('my', { eventId: curEventId(), sessionId, side });
     // Remember this pair's names so later tables recognise them too.
     const names = side === 'NS' ? [s.nsP1, s.nsP2] : [s.ewP1, s.ewP2];
@@ -367,9 +420,11 @@ function renderNew(r) {
     const btn = f.querySelector('[type=submit]'); btn.disabled = true;
     try {
       const out = editing
-        ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body } })
+        ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body, fromStartBoard: editing.startBoard } })
         : await api('sessions', { method: 'POST', body: { ...body, eventId: curEventId(), clientToken: token } });
-      store.set('prefs', { names: [fd.us1, fd.us2] });
+      // The server may have used the spelling already in use (e.g. "Rob V" for "ROB V").
+      const os = out.session;
+      store.set('prefs', { names: side === 'NS' ? [os.nsP1, os.nsP2] : [os.ewP1, os.ewP2] });
       store.set('my', { eventId: curEventId(), sessionId: out.session.id, side });
       store.set('lastSession', { startBoard: out.session.startBoard, side, sessionId: out.session.id, eventId: curEventId() });
       upsertSession(out.session);
@@ -378,8 +433,24 @@ function renderNew(r) {
       const first = editing ? null : [1, 2, 3, 4].find((k) => !(out.session.deals || []).some((d) => d.dealNo === k));
       go(first ? `#/deal/${out.session.id}/${first}` : `#/s/${out.session.id}`);
     } catch (e) {
-      document.getElementById('formErr').textContent = e.message;
       btn.disabled = false;
+      if (e.status === 409 && e.body?.existingId) {
+        // The other pair already set this table up: join it rather than make a second copy.
+        sheet(`<h2>This table is already set up</h2><p>${esc(e.message)}</p>
+          <button class="btn primary big block" id="joinIt">Join that table</button>`, (root) => {
+          root.querySelector('#joinIt').onclick = async () => {
+            closeSheet();
+            try { await loadDay(); } catch { /* use what we have */ }
+            // Their own names were just typed, so their side is known (any capitals).
+            store.set('prefs', { ...store.get('prefs', {}), names: [fd.us1, fd.us2] });
+            logEvent('joined_instead_of_duplicate', { sessionId: e.body.existingId });
+            if (sessionById(e.body.existingId)) chooseSide(e.body.existingId); else go('#/play');
+          };
+        });
+        return;
+      }
+      if (e.status === 409 && e.body?.session) upsertSession(e.body.session);
+      document.getElementById('formErr').textContent = e.message;
     }
   };
 }
@@ -512,7 +583,7 @@ function boardNumbersSheet(s, after) {
       root.querySelectorAll('button').forEach((x) => (x.disabled = true));
       btn.innerHTML = '<span class="spin" aria-hidden="true"></span>Saving…';
       try {
-        const out = await api('sessions', { method: 'PATCH', body: { id: s.id, startBoard: v } });
+        const out = await api('sessions', { method: 'PATCH', body: { id: s.id, startBoard: v, fromStartBoard: s.startBoard } });
         upsertSession(out.session);
         const last = store.get('lastSession');
         if (last?.sessionId === s.id) store.set('lastSession', { ...last, startBoard: v });
@@ -520,6 +591,12 @@ function boardNumbersSheet(s, after) {
         toast(`Now Boards ${v}–${v + 3}`);
         after?.();
       } catch (e) {
+        if (e.status === 409 && e.body?.session) {
+          // Another phone renumbered this table first: show its numbers.
+          upsertSession(e.body.session);
+          closeSheet(); toast(e.message, 'error'); after?.();
+          return;
+        }
         root.querySelectorAll('button').forEach((x) => (x.disabled = false));
         btn.textContent = 'Save board numbers';
         err.textContent = e.message;
@@ -548,7 +625,7 @@ function dealsFor(s) {
     const d = s.deals.find((x) => x.dealNo === n);
     const draft = d || vulLocked() ? null : store.get(`draft:${s.id}:${n}`);
     const vul = d ? vulForDeal(d, s.firstDealer)
-      : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : vulnerabilityFor(n, s.firstDealer));
+      : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : vulnerabilityFor(n, s.firstDealer, s.createdAt));
     return { n, board: boardNumberFor(n, s.startBoard), vul, dealer: dealerFor(n, s.firstDealer), d, scored: d ? scoreDeal(d, s.firstDealer) : null };
   });
 }
@@ -578,7 +655,7 @@ function renderGame(r) {
       const isNext = next && next.n === x.n;
       return `<div class="card board todo ${isNext ? 'next' : ''}">${head}
       <p class="muted">${isNext ? '<strong class="nextlbl">Next to enter</strong> · ' : ''}Deal ${x.n} · Dealer ${seatName(x.dealer)}</p>
-      <a class="btn block ${isNext ? 'primary' : ''}" href="#/deal/${s.id}/${x.n}">Enter result ›</a></div>`;
+      <a class="btn block ${isNext ? 'primary' : ''}" href="#/deal/${s.id}/${x.n}">Start playing…</a></div>`;
     }
     const sc = x.scored;
     return `<div class="card board res-${madeClass(x.d) || 'pass'}">${head}
@@ -630,6 +707,7 @@ function renderGame(r) {
     </div>`);
 
   const startNew = () => {
+    logEvent('left_table', { sessionId: s.id, boardsEntered: done, to: 'new table' });
     store.set('lastSession', { startBoard: s.startBoard, side: m?.side || 'NS', sessionId: s.id, eventId: curEventId() });
     store.del('my');
     go('#/new');
@@ -664,6 +742,7 @@ function renderGame(r) {
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
   document.getElementById('swapSide')?.addEventListener('click', () => {
     const side = m.side === 'NS' ? 'EW' : 'NS';
+    logEvent('swapped_side', { sessionId: s.id, now: side });
     store.set('my', { ...m, side });
     // Remember the new pair's names so joining later tables matches the right side.
     const names = side === 'NS' ? [s.nsP1, s.nsP2] : [s.ewP1, s.ewP2];
@@ -777,7 +856,7 @@ function renderEntry(r) {
   if (!s || ![1, 2, 3, 4].includes(n)) { $app.innerHTML = shell('play', errorBlock('This board could not be found.')); return; }
   const existing = s.deals.find((d) => d.dealNo === n);
   const draftKey = `draft:${s.id}:${n}`;
-  const def = vulnerabilityFor(n, s.firstDealer);
+  const def = vulnerabilityFor(n, s.firstDealer, s.createdAt);
   const saved = existing ? {
     passedOut: existing.passedOut, level: existing.level, strain: existing.strain, doubled: existing.doubled || '', declarer: existing.declarer,
     diff: existing.passedOut ? 0 : existing.tricks - (existing.level + 6), leadSuit: existing.leadSuit, leadRank: existing.leadRank,
@@ -809,6 +888,7 @@ function renderEntry(r) {
     <section class="card" id="othersCard"><h2>At other tables</h2><div id="others">${entryOthers(s, n)}</div></section>
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn primary big" id="saveBtn">Save result</button></div>`);
   state.entry.draftKey = draftKey;
+  state.entry.shownStart = s.startBoard;   // to notice another phone renumbering this table
   document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, () => render());
   drawEntry();
 }
@@ -1010,6 +1090,13 @@ async function saveEntry(draftKey) {
     const s = sessionById(sessionId);
     s.deals = s.deals.filter((x) => x.dealNo !== n).concat(out.deal).sort((a, b) => a.dealNo - b.dealNo);
     store.del(draftKey);
+    if (out.deal.boardNum !== boardNumberFor(n, s.startBoard)) {
+      // Another phone changed this table's board numbers: follow the server.
+      s.startBoard = out.deal.boardNum - n + 1;
+      state.entry.shownStart = s.startBoard;
+      const h = document.querySelector('.entry-head .bnum.big'); if (h) h.textContent = `Board ${out.deal.boardNum}`;
+      logEvent('stale_board_numbers_fixed', { sessionId, dealNo: n, now: out.deal.boardNum });
+    }
     const sc = scoredAt(s, out.deal);
     toast(`Saved · Board ${out.deal.boardNum} · ${sc.scoredBy ? `${short(sc.scoredBy)} score ${Math.abs(sc.nsScore)}` : 'no score'}`);
     // Stay on this board, right where it is on screen: show how the other
@@ -1142,7 +1229,8 @@ function confirmRestart() {
     root.querySelector('#restartYes').onclick = async () => {
       closeSheet();
       try {
-        Object.keys(localStorage).filter((k) => k.startsWith('chi:'))
+        logEvent('start_again', { screen: location.hash }); flushLog();
+        Object.keys(localStorage).filter((k) => k.startsWith('chi:') && k !== 'chi:device')
           .forEach((k) => localStorage.removeItem(k));
       } catch { /* private mode */ }
       state.entry = null; state.scrollToNext = false;
@@ -1161,7 +1249,7 @@ async function renderOthers() {
   const myBoards = new Set(m ? (sessionById(m.sessionId)?.deals || []).map((d) => d.boardNum) : []);
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
-    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
+    <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
     <p class="muted">Tap a board to compare every table’s result for that board.</p>
     ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
       : '<div class="card"><p class="muted">No boards recorded in this session yet.</p></div>'}
@@ -1207,7 +1295,7 @@ async function renderDay() {
   const rows = daySummary(data.sessions, dayTotalsFn(data.sessions));
   const games = data.sessions.length;
   $app.innerHTML = shell('day', `
-    <header class="top"><a href="#/play" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
+    <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
     <p class="muted">${games} table${games === 1 ? '' : 's'} in this session. Pairs are ranked by the total points they won.</p>
     ${rows.length ? rows.map((x) => `<a class="card rank" href="#/pair/${encodeURIComponent(x.key)}">
         <span class="rk">${x.rank}</span>
@@ -1235,9 +1323,10 @@ function organiserPanel(data) {
         : 'New tables use Chicago scoring (each board on its own, set vulnerability).'} Tables already set up keep their own scoring.</span></span>
       <button class="btn small-btn ${scoringMode() === 'rubber' ? 'primary' : 'ghost'}" id="scoringBtn">${scoringMode() === 'rubber' ? 'Use Chicago' : 'Use Rubber'}</button></div>
     <div class="org-row vul-switch"><span><strong>Vulnerability ${vulLocked() ? 'locked 🔒' : 'unlocked'}</strong><br>
-      <span class="muted small">${vulLocked() ? 'Every board uses N/S, E/W, Both, Neither. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
+      <span class="muted small">${vulLocked() ? 'Boards use Neither, N/S, E/W, Both. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
       <button class="btn small-btn ${vulLocked() ? 'ghost' : 'primary'}" id="vulLockBtn">${vulLocked() ? 'Unlock' : 'Lock'}</button></div>
     <button class="btn ghost block" id="manageNames">Edit names…</button>
+    <button class="btn ghost block" id="activityLog">Activity log…</button>
     <h3 class="org-sub">Tables in this session</h3>
     ${games.length ? `<div class="stack">${games.map((g) => `<div class="org-row">
         <span><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong><br>
@@ -1465,6 +1554,7 @@ function wireOrganiser(data) {
       rerenderKeepScroll();
     } catch (e) { toast(e.message, 'error'); rerenderKeepScroll(); }
   };
+  document.getElementById('activityLog').onclick = () => showActivityLog();
   document.getElementById('scoringBtn').onclick = () => {
     const to = scoringMode() === 'rubber' ? 'chicago' : 'rubber';
     sheet(`<h2>Switch to ${to === 'rubber' ? 'rubber bridge' : 'Chicago'} scoring?</h2>
@@ -1523,6 +1613,65 @@ async function renderPair(r) {
     ${items.join('') || '<p class="muted">No boards found.</p>'}`);
 }
 
+// ---------- organiser: activity log ----------
+const LOG_WORDS = {
+  login: 'Logged in', login_failed: 'Wrong access code', logout: 'Logged out', table_set_up: 'Set up a table',
+  table_changed: 'Changed the table', board_numbers_changed: 'Changed board numbers', board_saved: 'Saved a board',
+  board_corrected: 'Corrected a board', refused: 'Refused', error: 'Server error', phone_error: 'Phone error',
+  no_connection: 'No connection', screen: 'Went to', start_again: 'Start again', joined_table: 'Joined a table',
+  swapped_side: 'Swapped side', joined_instead_of_duplicate: 'Joined the table already set up', left_table: 'Left the table', stale_board_numbers_fixed: 'Board numbers caught up',
+};
+const screenName = (h) => {
+  const [n, a, b] = String(h || '').replace(/^#\//, '').split('/');
+  const t = a && sessionById(a);
+  const tbl = t ? ` (${pairLabel(t.nsP1, t.nsP2)} v ${pairLabel(t.ewP1, t.ewP2)})` : '';
+  return ({ play: 'Play start screen', home: 'app start', new: 'Set up a new round', edit: `Change names${tbl}`, s: `Table${tbl}`,
+    deal: `Scoring deal ${b}${tbl}`, others: 'Other results', board: `Board ${a} results`, day: 'Day summary', pair: 'Pair page', login: 'Login' })[n] || h;
+};
+function logLine(x) {
+  const d = x.detail || {};
+  const t = new Date(x.at || d.phoneTime).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  const what = x.kind === 'screen' ? `Went to ${screenName(d.to)}` : (LOG_WORDS[x.kind] || x.kind.replace(/^organiser_/, 'Organiser: ').replace(/_/g, ' '));
+  const bits = [];
+  if (d.boards) bits.push(`Boards ${d.boards}`);
+  if (d.ns) bits.push(`${d.ns} v ${d.ew}`);
+  if (d.typed) bits.push(`typed as: ${d.typed}`);
+  if (d.board) bits.push(`Board ${d.board}`);
+  if (d.result) bits.push(d.result);
+  if (d.nsScore != null) bits.push(d.nsScore > 0 ? `N/S +${d.nsScore}` : d.nsScore < 0 ? `E/W +${-d.nsScore}` : 'no score');
+  if (d.start_board) bits.push(`first board ${d.start_board}`);
+  for (const k of ['ns_p1', 'ns_p2', 'ew_p1', 'ew_p2', 'first_dealer']) if (d[k]) bits.push(d[k]);
+  if (d.message) bits.push(d.message);
+  if (d.call) bits.push(d.call);
+  if (d.side || d.now) bits.push(d.side || d.now);
+  if (d.as) bits.push(d.as);
+  if (d.deletedTable) bits.push(`${d.deletedTable.ns_p1} & ${d.deletedTable.ns_p2} v ${d.deletedTable.ew_p1} & ${d.deletedTable.ew_p2}, Boards ${d.deletedTable.start_board}–${d.deletedTable.start_board + 3}, ${(d.deletedTable.chi_deals || []).length} results (copy kept)`);
+  if (x.kind !== 'screen' && (d.name || d.from)) bits.push([d.from || d.name, d.to].filter(Boolean).join(' → '));
+  const who = x.who || (x.device ? `phone ${x.device.slice(0, 4)}` : '—');
+  const bad = ['refused', 'error', 'phone_error', 'no_connection', 'login_failed'].includes(x.kind);
+  return `<li class="lg ${bad ? 'bad' : ''} ${x.kind === 'screen' ? 'nav' : ''}"><span class="lg-t">${t}</span>
+    <span class="lg-w">${esc(who)}${x.role === 'admin' ? ' (organiser)' : ''}<small>${x.device ? ' · ' + esc(x.device.slice(0, 4)) : ''}</small></span>
+    <span class="lg-x"><strong>${esc(what)}</strong>${bits.length ? ' · ' + esc(bits.join(' · ')) : ''}</span></li>`;
+}
+async function showActivityLog() {
+  sheet('<h2>Activity log</h2><p class="muted">Loading…</p>');
+  try {
+    const out = await api(`log?event=${encodeURIComponent(curEventId())}&limit=500`);
+    const all = out.entries || [];
+    const draw = (root, nav) => {
+      const rows = all.filter((x) => nav || x.kind !== 'screen');
+      root.querySelector('#lgList').innerHTML = rows.length ? rows.map(logLine).join('') : '<li class="muted">Nothing logged yet.</li>';
+    };
+    sheet(`<h2>Activity log</h2>
+      <p class="muted small">Newest first, for the session shown on Day summary. Each phone has a short code (e.g. ${esc(deviceId().slice(0, 4))} is this phone).</p>
+      <label class="small lg-opt"><input type="checkbox" id="lgNav"> Also show every screen each phone went to</label>
+      <ul class="loglist" id="lgList"></ul>`, (root) => {
+      draw(root, false);
+      root.querySelector('#lgNav').onchange = (ev) => draw(root, ev.target.checked);
+    });
+  } catch (e) { closeSheet(); toast(e.message, 'error'); }
+}
+
 // ---------- bottom sheet ----------
 function sheet(html, wire) {
   closeSheet();
@@ -1542,7 +1691,9 @@ function fmtDate(d) {
 }
 
 // ---------- keep results fresh (other games' results arrive every 20s) ----------
-setInterval(async () => {
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
+setInterval(() => refresh(), 20000);
+async function refresh() {
   if (document.hidden || !state.data || document.getElementById('sheet')) return;
   const r = route();
   if (r.name === 'login' || r.name === 'new' || r.name === 'edit') return;
@@ -1550,13 +1701,21 @@ setInterval(async () => {
     await loadDay();
     if (r.name === 'deal') {
       const s = sessionById(r.a);
+      if (s && state.entry && state.entry.shownStart !== s.startBoard) {
+        // Board numbers were changed on another phone: redraw (the half-entered result is kept).
+        toast(`This table is now Boards ${s.startBoard}–${s.startBoard + 3}`);
+        if (!state.entry.justSaved) { const y = window.scrollY; await render(); window.scrollTo(0, y); return; }
+        state.entry.shownStart = s.startBoard;
+        const h = document.querySelector('.entry-head .bnum.big'); if (h) h.textContent = `Board ${boardNumberFor(Number(r.b), s.startBoard)}`;
+        drawPreview(s);
+      }
       const o = document.getElementById('others');
       if (s && o) o.innerHTML = state.entry?.justSaved ? othersOnBoard(boardNumberFor(Number(r.b), s.startBoard), s.id) : entryOthers(s, Number(r.b));
     } else {
       const y = window.scrollY; await render(); window.scrollTo(0, y);
     }
   } catch { /* offline — try again next time */ }
-}, 20000);
+}
 
 // ---------- start ----------
 (async () => {
@@ -1568,6 +1727,6 @@ setInterval(async () => {
     $app.innerHTML = `<main class="screen">${errorBlock(e.message)}</main>`;
     return;
   }
-  if (!location.hash || location.hash === '#/login') location.hash = '#/play';
+  if (!location.hash || location.hash === '#/login' || location.hash === '#/play') location.hash = '#/home';
   render();
 })();

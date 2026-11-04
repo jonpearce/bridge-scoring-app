@@ -1237,11 +1237,15 @@ async function saveEntry(draftKey, opts = {}) {
 // Returns null for the organiser, who sees everything.
 function seenBoards() {
   if (state.admin) return null;
+  return playedBoards();
+}
+// Boards this phone's pair (or the table it sits at) has played in this session.
+function playedBoards() {
   const m = mine();
   const names = store.get('prefs', {}).names;
   const me = names?.[0] && names?.[1] ? pairKey(names[0], names[1]) : null;
   const seen = new Set();
-  for (const s of state.data.sessions) {
+  for (const s of state.data?.sessions || []) {
     const ours = s.id === m?.sessionId || (me && (pairKey(s.nsP1, s.nsP2) === me || pairKey(s.ewP1, s.ewP2) === me));
     if (ours) for (const d of s.deals) seen.add(d.boardNum);
   }
@@ -1345,7 +1349,7 @@ async function renderOthers() {
   $app.innerHTML = shell('others', `
     <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
     <p class="muted">Tap a board to compare every table’s result for that board.</p>
-    ${list.length ? `<div class="boardgrid">${list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}"><span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join('')}</div>`
+    ${list.length ? `<div class="boardgrid">${(() => { const played = playedBoards(); return list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}" aria-label="Board ${b}, ${c} table${c > 1 ? 's' : ''}${played.has(b) ? ', you have played it' : ''}">${played.has(b) ? '<span class="played-tick" aria-hidden="true">✓</span>' : ''}<span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join(''); })()}</div>`
       : '<div class="card"><p class="muted">No boards recorded in this session yet.</p></div>'}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();

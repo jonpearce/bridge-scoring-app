@@ -660,3 +660,7 @@ body.splash .logo { background: var(--gold-soft); color: var(--green); width: 10
 body.splash .login form.card { box-shadow: 0 10px 30px rgba(0,0,0,.3); border-color: transparent; }
 body.splash .login .card.error, body.splash .login .card.sleep { margin-top: 16px; }
 .splash-wait { text-align: center; color: #cfe0d6; margin-top: 18px; letter-spacing: .05em; }
+
+/* Other results: a small tick on boards this pair has played */
+.bcell { position: relative; }
+.bcell .played-tick { position: absolute; top: 4px; right: 7px; font-size: .8rem; font-weight: 700; color: #4f8f6a; line-height: 1; }

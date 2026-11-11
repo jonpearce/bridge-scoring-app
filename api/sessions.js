@@ -9,8 +9,11 @@ const SELECT = 'id,event_id,location,start_board,first_dealer,scoring,ns_p1,ns_p
 // GET   /api/sessions?event=ID  → every table (with boards) in that playing session
 //                                 (newest session if no ID), plus the list of sessions
 // POST  /api/sessions  { eventId, startBoard, firstDealer, nsP1, nsP2, ewP1, ewP2, clientToken }
-// PATCH /api/sessions  { id, ...fields }  → edit names or board numbers (any time — saved boards
-//                                           are renumbered); first dealer only before play starts
+// PATCH /api/sessions  { id, ...fields }  → edit names or board numbers (saved boards are
+//                                           renumbered); first dealer only before play starts.
+//                                           Locked for players once all 4 boards are saved;
+//                                           changing names after a save needs confirmPairChange;
+//                                           never allowed to make a copy of another table.
 export default handler({
   GET: async (req, res) => {
     requireAuth(req);
@@ -102,7 +105,34 @@ export default handler({
     if (b.startBoard != null && Number(b.startBoard) !== cur.start_board) b.startBoard = setStartFor(b.startBoard);
     const row = sessionFields({ ...toSession(cur), ...b }, true);
     await useKnownSpellings(row);
-    const played = (cur.chi_deals || []).length > 0;
+    const saved = (cur.chi_deals || []).length;
+    const played = saved > 0;
+    const namesChanged = ['ns_p1', 'ns_p2', 'ew_p1', 'ew_p2'].filter((k) => row[k] !== cur[k]);
+    const boardsChanged = row.start_board !== cur.start_board;
+    // A finished table (all 4 boards saved) is locked for players: on 11 Nov two
+    // finished tables were "recycled" for the next round via Change names, which
+    // moved their results onto the wrong pair. Only the organiser can change it.
+    if (saved >= 4 && authRole(req) !== 'admin' && (namesChanged.length || boardsChanged)) {
+      throw new HttpError(409, 'All four boards at this table are saved, so its players and board numbers can’t be changed. To play the next round, go back to the table and tap “Play the next 4 boards”. If something here is wrong, ask the organiser.',
+        { locked: true });
+    }
+    // The change must not turn this table into a copy of another one
+    // (same four players, same boards, same session).
+    if (namesChanged.length || boardsChanged) {
+      const c = [pairKey(row.ns_p1, row.ns_p2), pairKey(row.ew_p1, row.ew_p2)].sort().join('|');
+      const other = (await db(`chi_sessions?event_id=eq.${cur.event_id}&select=id,start_board,ns_p1,ns_p2,ew_p1,ew_p2`)).find((x) =>
+        x.id !== cur.id && x.start_board === row.start_board && [pairKey(x.ns_p1, x.ns_p2), pairKey(x.ew_p1, x.ew_p2)].sort().join('|') === c);
+      if (other) {
+        throw new HttpError(409, `${other.ns_p1} & ${other.ns_p2} v ${other.ew_p1} & ${other.ew_p2} on Boards ${other.start_board}–${other.start_board + 3} is already a separate table, so this one can’t be changed to match it. If this is a new round, go back and tap “Play the next 4 boards” (or “Leave this table”) instead.`,
+          { duplicateOf: other.id, logDetail: { duplicateOf: other.id } });
+      }
+    }
+    // Changing who played once results are saved moves those results to the new
+    // names. Ask the phone to confirm first (it shows old → new and offers to go back).
+    if (played && namesChanged.length && !b.confirmPairChange) {
+      throw new HttpError(409, `${saved} board${saved === 1 ? ' is' : 's are'} already saved at this table. Changing the players moves ${saved === 1 ? 'that result' : 'those results'} to the new names.`,
+        { confirmPairChange: true, changes: namesChanged.map((k) => `${cur[k]} → ${row[k]}`) });
+    }
     if (played && row.first_dealer !== cur.first_dealer) {
       throw new HttpError(409, 'The first dealer can’t be changed once a board has been recorded.');
     }

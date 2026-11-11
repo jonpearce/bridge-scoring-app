@@ -71,6 +71,17 @@ recalculated.
    at the bottom, then choose **Set up a new table** or **Join a different table**;
    boards already saved are kept. Each new day starts fresh on
    its own.
+   - **Never reuse a finished table for the next round** (added 11 Nov 2026).
+     Once all four boards are saved, players can no longer change that table's
+     names or board numbers (the buttons disappear, and the server refuses);
+     only the organiser can. Changing the players on a part-played table asks
+     first ("Change the players at this table?", showing old → new names). A
+     change that would make the table a copy of another one (same four players,
+     same boards) is refused. On 11 Nov two finished tables were renamed for the
+     next round this way, which moved their results to the wrong pairs.
+   - **"Did you mean …?"** When a name that hasn't played before is a letter or
+     two away from one that has (Marion / Marian), the phone asks which is right
+     before setting up the table.
 
 8. **Log out:** at the bottom of the Play, Other results and Day summary screens, tap **Log out** (for
    example to log back in with the organiser code).

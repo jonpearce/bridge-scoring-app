@@ -664,3 +664,7 @@ body.splash .login .card.error, body.splash .login .card.sleep { margin-top: 16p
 /* Other results: a small tick on boards this pair has played */
 .bcell { position: relative; }
 .bcell .played-tick { position: absolute; top: 4px; right: 7px; font-size: .8rem; font-weight: 700; color: #4f8f6a; line-height: 1; }
+
+/* "Change the players at this table?" pop-up: old → new names (11 Nov) */
+ul.changes { margin: .25rem 0 .75rem; padding-left: 1.2rem; font-weight: 600; }
+ul.changes li { margin: .15rem 0; }

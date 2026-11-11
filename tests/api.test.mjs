@@ -203,6 +203,9 @@ test('a second game can record the same board independently', async () => {
 });
 
 test('board numbers can change after play (saved boards move); dealer cannot', async () => {
+  // A part-played table (2 of 4 saved). A finished one is locked for players (tested below).
+  const sid = (await call(sessions, 'POST', { ...newTable, nsP1: 'Jon', nsP2: 'Kim', ewP1: 'Ann', ewP2: 'Bob', startBoard: 33, clientToken: crypto.randomUUID() })).body.session.id;
+  for (const k of [1, 2]) await call(deal, 'PUT', { sessionId: sid, dealNo: k, passedOut: true });
   const was = T.chi_sessions.find((x) => x.id === sid).start_board;
   const r = await call(sessions, 'PATCH', { id: sid, startBoard: 21 });
   assert.equal(r.status, 200);
@@ -213,10 +216,36 @@ test('board numbers can change after play (saved boards move); dealer cannot', a
   await call(sessions, 'PATCH', { id: sid, startBoard: was });   // put it back for later tests
   const d = await call(sessions, 'PATCH', { id: sid, firstDealer: 'W' });
   assert.equal(d.status, 409);
-  const ok = await call(sessions, 'PATCH', { id: sid, nsP2: 'Margaret' });
+  // Results are saved here, so changing a player must be confirmed first.
+  const ask = await call(sessions, 'PATCH', { id: sid, nsP2: 'Margaret' });
+  assert.equal(ask.status, 409);
+  assert.equal(ask.body.confirmPairChange, true);
+  assert.ok(ask.body.changes.some((c) => c.endsWith('→ Margaret')));
+  const ok = await call(sessions, 'PATCH', { id: sid, nsP2: 'Margaret', confirmPairChange: true });
   assert.equal(ok.status, 200);
   assert.equal(ok.body.session.nsP2, 'Margaret');
   assert.equal(ok.body.session.location, 'Jon & Margaret v Ann & Bob');
+});
+
+test('11 Nov: a finished table is locked for players; a rename may not copy another table', async () => {
+  const mk = (n, extra = {}) => call(sessions, 'POST', { ...newTable, nsP1: `A${n}`, nsP2: `B${n}`, ewP1: `C${n}`, ewP2: `D${n}`, startBoard: 9, clientToken: crypto.randomUUID(), ...extra });
+  const t1 = (await mk(1)).body.session;
+  for (const k of [1, 2, 3, 4]) assert.equal((await call(deal, 'PUT', { sessionId: t1.id, dealNo: k, passedOut: true })).status, 200);
+  // Player tries to reuse the finished table for the next round: refused.
+  const reuse = await call(sessions, 'PATCH', { id: t1.id, ewP1: 'X1', ewP2: 'Y1', startBoard: 13, fromStartBoard: 9, confirmPairChange: true });
+  assert.equal(reuse.status, 409);
+  assert.equal(reuse.body.locked, true);
+  const nums = await call(sessions, 'PATCH', { id: t1.id, startBoard: 13, fromStartBoard: 9 });
+  assert.equal(nums.status, 409);
+  assert.equal(T.chi_sessions.find((x) => x.id === t1.id).ew_p1, 'C1');
+  // A table with nothing saved can't be renamed into a copy of another table.
+  const t2 = (await mk(2)).body.session;
+  const copy = await call(sessions, 'PATCH', { id: t2.id, nsP1: 'B1', nsP2: 'A1', ewP1: 'D1', ewP2: 'C1' });
+  assert.equal(copy.status, 409);
+  assert.equal(copy.body.duplicateOf, t1.id);
+  // Different boards is fine.
+  const fine = await call(sessions, 'PATCH', { id: t2.id, nsP1: 'B1', nsP2: 'A1', ewP1: 'D1', ewP2: 'C1', startBoard: 13, fromStartBoard: 9 });
+  assert.equal(fine.status, 200);
 });
 
 test('players cannot use organiser actions', async () => {
@@ -229,6 +258,13 @@ test('organiser code logs in as organiser (any case)', async () => {
   assert.equal(r.status, 200);
   assert.equal(r.body.admin, true);
   assert.equal((await call(login, 'GET')).body.admin, true);
+});
+
+test('organiser can still correct the players on a finished table', async () => {
+  const t = T.chi_sessions.find((x) => x.ns_p1 === 'A1');
+  const r = await call(sessions, 'PATCH', { id: t.id, ewP1: 'C1x', confirmPairChange: true });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.session.ewP1, 'C1x');
 });
 
 test('organiser can delete one game, and its boards go with it', async () => {

@@ -346,6 +346,18 @@ function chooseSide(sessionId) {
 // =============================================================
 function renderNew(r) {
   const editing = r.name === 'edit' ? sessionById(r.a) : null;
+  // A finished table is locked for players (the server refuses too): changing its
+  // names is how two finished tables got reused for the next round on 11 Nov.
+  if (editing && editing.deals.length >= 4 && !state.admin) {
+    $app.innerHTML = shell('play', `
+      <header class="top"><a href="#/s/${editing.id}" class="back">‹ Back</a><h1>Change names</h1></header>
+      <div class="card stack"><h2>This table is finished</h2>
+        <p>All four boards are saved, so the players and board numbers here can’t be changed.</p>
+        <p><strong>Starting the next round?</strong> Tap below and set up a new table.</p>
+        <p class="muted small">If a name or board number here is wrong, ask the organiser to fix it.</p>
+        <a class="btn go big block" href="#/s/${editing.id}">Back to the table ›</a></div>`);
+    return;
+  }
   const prefs = store.get('prefs', {});
   const lastRaw = store.get('lastSession');
   // Continue numbering only if that table is still here today; after the
@@ -441,11 +453,35 @@ function renderNew(r) {
   nameBoxes.forEach((i) => i.addEventListener('input', checkNames));
   nameBoxes.forEach((i) => i.addEventListener('change', checkNames));
 
+  let confirmPairChange = false;
+  const newNameOk = new Set();   // new names the player said are really new people
   f.onsubmit = async (ev) => {
     ev.preventDefault();
     if (!checkNames()) {
       logEvent('name_entered_twice', { name: repeatedName() });
       document.getElementById('nameErr').scrollIntoView({ block: 'center', behavior: 'smooth' });
+      return;
+    }
+    // A brand-new name that is a letter or two away from a known one ("Marion"
+    // when "Marian" has played before) is usually a misspelling: ask first.
+    for (const box of nameBoxes) {
+      const typed = box.value.trim().replace(/\s+/g, ' ');
+      const close = closeKnownName(typed, nameList);
+      if (!close || newNameOk.has(typed.toLowerCase())) continue;
+      logEvent('similar_name_asked', { typed, known: close });
+      sheet(`<h2>Did you mean ${esc(close)}?</h2>
+        <p><strong>${esc(typed)}</strong> hasn’t played before, but <strong>${esc(close)}</strong> has.</p>
+        <button class="btn go big block" id="useKnown">Use ${esc(close)}</button>
+        <button class="btn big block" id="keepNew">No — ${esc(typed)} is a different person</button>`, (root) => {
+        root.querySelector('#useKnown').onclick = () => {
+          closeSheet(); logEvent('similar_name_used_known', { typed, known: close });
+          box.value = close; checkNames(); f.requestSubmit();
+        };
+        root.querySelector('#keepNew').onclick = () => {
+          closeSheet(); logEvent('similar_name_kept_new', { typed, known: close });
+          newNameOk.add(typed.toLowerCase()); f.requestSubmit();
+        };
+      });
       return;
     }
     const fd = Object.fromEntries(new FormData(f));
@@ -457,7 +493,7 @@ function renderNew(r) {
     const btn = f.querySelector('[type=submit]'); btn.disabled = true;
     try {
       const out = editing
-        ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body, fromStartBoard: editing.startBoard } })
+        ? await api('sessions', { method: 'PATCH', body: { id: editing.id, ...body, fromStartBoard: editing.startBoard, ...(confirmPairChange ? { confirmPairChange: true } : {}) } })
         : await api('sessions', { method: 'POST', body: { ...body, eventId: curEventId(), clientToken: token, ...(allowDuplicate ? { allowDuplicate: true } : {}) } });
       // The server may have used the spelling already in use (e.g. "Rob V" for "ROB V").
       const os = out.session;
@@ -489,10 +525,52 @@ function renderNew(r) {
         });
         return;
       }
+      if (e.status === 409 && e.body?.confirmPairChange) {
+        // Results are already saved here: changing the players moves them to the new names.
+        logEvent('asked_before_changing_players', { sessionId: editing?.id, changes: e.body.changes });
+        sheet(`<h2>Change the players at this table?</h2><p>${esc(e.message)}</p>
+          <ul class="changes">${(e.body.changes || []).map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+          <p class="note"><strong>Starting the next round?</strong> Don’t change the names here. Go back to the table and tap <strong>Play the next 4 boards</strong> (or <strong>Leave this table</strong>), then set up the new table.</p>
+          <button class="btn go big block" id="keepNames">Keep the names, go back to the table</button>
+          <button class="btn big block" id="changeAnyway">Yes, these names were wrong — change them</button>`, (root) => {
+          root.querySelector('#keepNames').onclick = () => {
+            closeSheet(); logEvent('kept_players', { sessionId: editing?.id }); go(`#/s/${editing.id}`);
+          };
+          root.querySelector('#changeAnyway').onclick = () => {
+            closeSheet(); logEvent('confirmed_player_change', { sessionId: editing?.id }); confirmPairChange = true; f.requestSubmit();
+          };
+        });
+        return;
+      }
       if (e.status === 409 && e.body?.session) upsertSession(e.body.session);
       document.getElementById('formErr').textContent = e.message;
     }
   };
+}
+
+// If `typed` is not a known name but is within one letter (two for names of
+// 6+ letters) of exactly one-or-more known names, return the closest one.
+// Ignores capitals and spaces. Used to ask "Did you mean Marian?".
+function closeKnownName(typed, names) {
+  const t = String(typed || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  if (t.length < 3 || names.some((n) => n.toLowerCase() === t)) return null;
+  const limit = t.length >= 6 ? 2 : 1;
+  let best = null, bestD = Infinity;
+  for (const n of names) {
+    const d = editDistance(t, n.toLowerCase());
+    if (d <= limit && d < bestD) { best = n; bestD = d; }
+  }
+  return best;
+}
+function editDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 2) return 99;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
 }
 
 // One entry per name ignoring capitals and spaces, keeping the first spelling seen.
@@ -687,6 +765,8 @@ function renderGame(r) {
   const rub = isRubber(s) ? rubberTable(s) : null;
   const t = rub ? rubberTotals(rub) : sessionTotals(rows.filter((x) => x.scored).map((x) => x.scored));
   const next = rows.find((x) => !x.d);
+  // Finished table: players can't change names or board numbers (organiser can).
+  const locked = done === 4 && !state.admin;
 
   const card = (x) => {
     const title = `<span class="bnum">Board ${x.board}${x.d ? ' <span class="played">– played</span>' : ''}</span>`;
@@ -729,7 +809,7 @@ function renderGame(r) {
       ${isMine ? `<p class="you-are">You are <strong class="${m.side === 'NS' ? 'tns' : 'tew'}">${sideName(m.side)}</strong> <button class="btn small swap" id="swapSide" type="button">Swap</button></p>` : ''}
     </header>
     ${rub ? '<p class="scoring-tag">Rubber bridge scoring</p>' : ''}
-    <p class="board-range">Boards <strong>${s.startBoard}–${s.startBoard + 3}</strong> <button class="btn small swap" id="changeBoards" type="button">Change</button></p>
+    <p class="board-range">Boards <strong>${s.startBoard}–${s.startBoard + 3}</strong>${locked ? '' : ' <button class="btn small swap" id="changeBoards" type="button">Change</button>'}</p>
     <div class="progress" aria-label="${done} of 4 boards completed"><div class="bar"><span style="width:${done * 25}%"></span></div><strong>${done} of 4 boards completed</strong></div>
     ${rub && !done ? rubberStatus(rub) : ''}
     ${done && done < 4 ? totalsCard(t, rub) : ''}
@@ -742,7 +822,7 @@ function renderGame(r) {
     <div class="stack foot">
       ${done === 4 ? '' : '<button class="btn ghost block" data-newgame>Leave this table</button>'}
       ${isMine ? '' : '<button class="btn block" id="claim">This is my table</button>'}
-      <a class="btn ghost block" href="#/edit/${s.id}">Change names</a>
+      ${locked ? '' : `<a class="btn ghost block" href="#/edit/${s.id}">Change names</a>`}
       ${restartButton()}
       ${logoutButton()}
     </div>`);
@@ -780,7 +860,8 @@ function renderGame(r) {
     ev.currentTarget.textContent = open ? 'Organiser: hide the 4 boards' : 'Organiser: correct a board ›';
   });
   document.getElementById('claim')?.addEventListener('click', () => chooseSide(s.id));
-  document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
+  const cb = document.getElementById('changeBoards');
+  if (cb) cb.onclick = () => boardNumbersSheet(s, rerenderKeepScroll);
   document.getElementById('swapSide')?.addEventListener('click', () => {
     const side = m.side === 'NS' ? 'EW' : 'NS';
     logEvent('swapped_side', { sessionId: s.id, now: side });
@@ -928,7 +1009,7 @@ function renderEntry(r) {
   $app.innerHTML = shell('play', `
     <header class="entry-head">
       <div class="entry-toprow"><a href="#/s/${s.id}" class="back">‹ Back to the table</a>${prevLink}</div>
-      <div class="bline"><span class="bnum big">Board ${board}</span><button class="btn small swap" id="changeBoards" type="button" aria-label="Change board numbers">Change</button><span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
+      <div class="bline"><span class="bnum big">Board ${board}</span>${s.deals.length >= 4 && !state.admin ? '' : '<button class="btn small swap" id="changeBoards" type="button" aria-label="Change board numbers">Change</button>'}<span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
     </header>
     <div id="entryNote">${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}</div>
     <div id="entry"></div>
@@ -936,7 +1017,8 @@ function renderEntry(r) {
     <div class="savebar"><div id="preview" class="preview" aria-live="polite"></div><button class="btn go big" id="saveBtn">Save result</button></div>`);
   state.entry.draftKey = draftKey;
   state.entry.shownStart = s.startBoard;   // to notice another phone renumbering this table
-  document.getElementById('changeBoards').onclick = () => boardNumbersSheet(s, () => render());
+  const cbn = document.getElementById('changeBoards');
+  if (cbn) cbn.onclick = () => boardNumbersSheet(s, () => render());
   drawEntry();
 }
 

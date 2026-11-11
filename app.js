@@ -1484,11 +1484,21 @@ async function renderDay() {
   const myKey = my?.[0] && my?.[1] ? pairKey(my[0], my[1]) : null;
   $app.innerHTML = shell('day', `
     <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
-    <p class="muted">${games} table${games === 1 ? '' : 's'} in this session. Pairs are ranked by <strong>matchpoints</strong>: on each board, your score is compared with every pair who held the same cards (same board, same direction) at other tables — 2 for each you beat, 1 for a tie. 50% is average. Boards played at only one table aren’t compared. Total points are shown too.</p>
+    <details class="input explain">
+      <summary>How the ranking works</summary>
+      <div class="explain-body">
+        <p>Pairs are ranked by <strong>matchpoints</strong>. On each board, your score is compared with every pair who held the same cards (same board, same direction) at the other tables: <strong>2</strong> for each one you beat, <strong>1</strong> for a tie.</p>
+        <p>Each board becomes a percentage, and your figure is the average of them. <strong>50% is average.</strong></p>
+        <p>A board played at only one table has nothing to compare with, so it isn’t counted (it still counts in your points).</p>
+        <p>Under each pair: boards and tables played, then the <strong>total points</strong> won and the average a board. Tap a pair to see each board’s points and %.</p>
+      </div>
+    </details>
+    <p class="muted">${games} table${games === 1 ? '' : 's'} in this session.</p>
     ${rows.length ? rows.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}" ${x.key === myKey ? 'aria-current="true"' : ''}>
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}${x.key === myKey ? ' <span class="you-pill">You</span>' : ''}</strong>
-          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}${x.mpBoards !== x.boards ? ` · ${x.mpBoards} compared` : ''}</span>
+          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
+          ${x.mpBoards !== x.boards ? `<span class="muted small">${x.boards - x.mpBoards} board${x.boards - x.mpBoards === 1 ? '' : 's'} not compared (no other table played ${x.boards - x.mpBoards === 1 ? 'it' : 'them'})</span>` : ''}
           <span class="muted"><strong>${x.points}</strong> points · average ${x.avgPerBoard} a board</span></span>
         <span class="rv">${x.mpPct == null ? '—' : `${x.mpPct.toFixed(1)}%`}</span></a>`).join('')
       : '<div class="card"><p class="muted">No results yet in this session.</p></div>'}

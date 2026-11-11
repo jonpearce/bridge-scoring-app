@@ -1491,9 +1491,14 @@ async function renderDay() {
         <p>Each board becomes a percentage, and your figure is the average of them. <strong>50% is average.</strong></p>
         <p>A board played at only one table has nothing to compare with, so it isn’t counted (it still counts in your points).</p>
         <p>Under each pair: boards and tables played, then the <strong>total points</strong> won and the average a board. Tap a pair to see each board’s points and %.</p>
+        <p><strong>“2 won”</strong> (after the tables) is how many of that pair’s tables they won: all four boards played, and more points than their opponents at that table.</p>
       </div>
     </details>
-    <p class="muted">${games} table${games === 1 ? '' : 's'} in this session.</p>
+    ${games ? `<details class="input explain">
+      <summary>${games} table${games === 1 ? '' : 's'} in this session <span class="muted">(tap to expand)</span></summary>
+      <div class="explain-body"><ul class="table-list">${data.sessions.map((g) => `<li><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> <span class="muted">(N/S)</span> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong> <span class="muted">(E/W)</span><br>
+        <span class="muted small">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></li>`).join('')}</ul></div>
+    </details>` : '<p class="muted">No tables in this session yet.</p>'}
     ${rows.length ? rows.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}" ${x.key === myKey ? 'aria-current="true"' : ''}>
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}${x.key === myKey ? ' <span class="you-pill">You</span>' : ''}</strong>

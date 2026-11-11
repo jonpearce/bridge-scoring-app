@@ -692,3 +692,12 @@ details.explain[open] summary { background-image: url("data:image/svg+xml,%3Csvg
 details.explain .explain-body { padding: 0 14px 12px; font-size: .92rem; line-height: 1.45; }
 details.explain .explain-body p { margin: 0 0 8px; }
 details.explain .explain-body p:last-child { margin-bottom: 0; }
+
+/* Day summary: list of tables in the drop-down (11 Nov) */
+ul.table-list { list-style: none; margin: 0; padding: 0; }
+ul.table-list li { padding: 8px 0; border-top: 1px solid var(--line); }
+ul.table-list li:first-child { border-top: 0; padding-top: 0; }
+
+/* Pair page: keep "Bd 13" and the bid ("2NT W") on one line (11 Nov) */
+table.mini td:nth-child(1), table.mini td:nth-child(2), table.mini td.num { white-space: nowrap; }
+table.mini td:nth-child(2) { padding-right: 10px; }

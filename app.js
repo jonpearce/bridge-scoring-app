@@ -165,6 +165,17 @@ function route() {
   return { name: parts[0] || 'play', a: parts[1] ? decodeURIComponent(parts[1]) : null, b: parts[2] ? decodeURIComponent(parts[2]) : null };
 }
 
+// Drop-downs (<details id="…">) stay open when the screen is redrawn — the
+// 20-second refresh used to close them (11 Nov).
+const openDetails = new Set();
+document.addEventListener('toggle', (e) => {
+  const d = e.target;
+  if (d.tagName === 'DETAILS' && d.id) { if (d.open) openDetails.add(d.id); else openDetails.delete(d.id); }
+}, true);
+function restoreOpenDetails() {
+  for (const id of openDetails) { const d = document.getElementById(id); if (d && !d.open) d.open = true; }
+}
+
 async function render() {
   const r = route();
   if (r.name === 'login') return renderLogin();
@@ -177,6 +188,7 @@ async function render() {
   setSplash(false);
   const screens = { home: renderHome, play: renderPlay, new: renderNew, edit: renderNew, s: renderGame, deal: renderEntry, others: renderOthers, board: renderBoard, day: renderDay, pair: renderPair };
   await (screens[r.name] || renderPlay)(r);
+  restoreOpenDetails();
   window.scrollTo(0, 0);
   if (state.scrollToNext && r.name === 's') {
     state.scrollToNext = false;
@@ -1484,7 +1496,7 @@ async function renderDay() {
   const myKey = my?.[0] && my?.[1] ? pairKey(my[0], my[1]) : null;
   $app.innerHTML = shell('day', `
     <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
-    <details class="input explain">
+    <details class="input explain" id="rankHelp">
       <summary>How the ranking works</summary>
       <div class="explain-body">
         <p>Pairs are ranked by <strong>matchpoints</strong>. On each board, your score is compared with every pair who held the same cards (same board, same direction) at the other tables: <strong>2</strong> for each one you beat, <strong>1</strong> for a tie.</p>
@@ -1494,18 +1506,19 @@ async function renderDay() {
         <p><strong>“2 won”</strong> (after the tables) is how many of that pair’s tables they won: all four boards played, and more points than their opponents at that table.</p>
       </div>
     </details>
-    ${games ? `<details class="input explain">
-      <summary>${games} table${games === 1 ? '' : 's'} in this session <span class="muted">(tap to expand)</span></summary>
+    ${games ? `<details class="input explain" id="tableList">
+      <summary>${games} table${games === 1 ? '' : 's'} in this session</summary>
       <div class="explain-body"><ul class="table-list">${data.sessions.map((g) => `<li><strong>${esc(pairLabel(g.nsP1, g.nsP2))}</strong> <span class="muted">(N/S)</span> v <strong>${esc(pairLabel(g.ewP1, g.ewP2))}</strong> <span class="muted">(E/W)</span><br>
         <span class="muted small">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></li>`).join('')}</ul></div>
     </details>` : '<p class="muted">No tables in this session yet.</p>'}
+    ${rows.length ? `<p class="list-hint">Pairs <span class="muted">(tap a pair to see its boards)</span></p>` : ''}
     ${rows.length ? rows.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}" ${x.key === myKey ? 'aria-current="true"' : ''}>
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}${x.key === myKey ? ' <span class="you-pill">You</span>' : ''}</strong>
           <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
           ${x.mpBoards !== x.boards ? `<span class="muted small">${x.boards - x.mpBoards} board${x.boards - x.mpBoards === 1 ? '' : 's'} not compared (no other table played ${x.boards - x.mpBoards === 1 ? 'it' : 'them'})</span>` : ''}
           <span class="muted"><strong>${x.points}</strong> points · average ${x.avgPerBoard} a board</span></span>
-        <span class="rv">${x.mpPct == null ? '—' : `${x.mpPct.toFixed(1)}%`}</span></a>`).join('')
+        <span class="rv">${x.mpPct == null ? '—' : `${x.mpPct.toFixed(1)}%`}<span class="chev" aria-hidden="true">›</span></span></a>`).join('')
       : '<div class="card"><p class="muted">No results yet in this session.</p></div>'}
     ${state.admin ? organiserPanel(data) : logoutButton()}`);
   wireSessionPicker(); wireLogout();

@@ -701,3 +701,7 @@ ul.table-list li:first-child { border-top: 0; padding-top: 0; }
 /* Pair page: keep "Bd 13" and the bid ("2NT W") on one line (11 Nov) */
 table.mini td:nth-child(1), table.mini td:nth-child(2), table.mini td.num { white-space: nowrap; }
 table.mini td:nth-child(2) { padding-right: 10px; }
+
+/* Day summary: say the pair rows can be tapped, and show an arrow on each (11 Nov) */
+.list-hint { margin: 14px 2px 6px; font-weight: 700; }
+.rank .chev { margin-left: 8px; font-size: 1.4rem; font-weight: 400; color: var(--muted); vertical-align: -1px; }

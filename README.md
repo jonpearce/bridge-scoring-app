@@ -64,6 +64,13 @@ recalculated.
    entry screen also shows other tables' results underneath.
 6. **Day summary:** rankings for today (or an earlier day). Tap a pair for
    its board-by-board history.
+   - **Ranked by matchpoints (from 11 Nov):** on each board a pair's score is
+     compared with every pair who sat the same direction on the same board at
+     other tables: 2 for each one beaten, 1 for a tie. Each board's % counts
+     equally; the pair's figure is the average (50% = average). Boards played at
+     only one table, and rubber-scoring tables, aren't compared. Total points
+     are still shown under each pair, and each board on the pair page shows its
+     points and its matchpoint %. Code: `matchpoints` in `lib/chicago.js`.
 7. **New table (next four boards, usually new opponents):** once all four
    boards are in, tap **All 4 boards done & displayed below: set up a new table**. The next first
    board is suggested automatically (it goes back to board 1 after the organiser

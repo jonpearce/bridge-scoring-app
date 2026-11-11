@@ -243,3 +243,33 @@ test('day summary adds each pair once per game and ranks by points won', () => {
   assert.ok(rows.every((r) => r.points >= 0));
   assert.equal(rows.find((r) => r.key === pairKey('Ann', 'Bob')).gamesWon, 1);
 });
+
+// ---------- matchpoints (11 Nov) ----------
+import { matchpoints as mpCalc, daySummary as daySum } from '../lib/chicago.js';
+test('matchpoints: same board, same direction compared; single-table boards left out', () => {
+  const t = (id, ns, ew, deals) => ({ id, firstDealer: 'N', nsP1: ns[0], nsP2: ns[1], ewP1: ew[0], ewP2: ew[1],
+    deals: deals.map(([boardNum, level, strain, declarer, tricks], i) => ({ dealNo: i + 1, boardNum, level, strain, declarer, tricks, doubled: '', vulNs: false, vulEw: false })) });
+  // Board 1 at three tables (real 11 Nov results): N/S nets −1010, −450, −200.
+  const s = [
+    t('a', ['Craig', 'Kaye'], ['Jon', 'Michelle'], [[1, 6, 'H', 'E', 13]]),
+    t('b', ['Jill', 'David'], ['Trish', 'Fiona'], [[1, 4, 'H', 'E', 11], [17, 3, 'NT', 'E', 9]]),
+    t('c', ['Sal T', 'Genni'], ['Richard', 'Janet'], [[1, 3, 'H', 'E', 11]]),
+  ];
+  const mp = mpCalc(s);
+  assert.equal(mp.byDeal.get('a:1').ns, 0);      // worst N/S
+  assert.equal(mp.byDeal.get('a:1').ew, 100);    // so best E/W
+  assert.equal(mp.byDeal.get('b:1').ns, 50);
+  assert.equal(mp.byDeal.get('c:1').ns, 100);
+  assert.equal(mp.byDeal.has('b:2'), false);     // Board 17: only one table
+  assert.equal(mp.byPair.get('jon & michelle').pct, 100);
+  assert.equal(mp.byPair.get('david & jill').boards, 1);
+  // A tie scores 1 of 2 each.
+  const tie = mpCalc([t('x', ['A', 'B'], ['C', 'D'], [[5, 1, 'NT', 'S', 7]]), t('y', ['E', 'F'], ['G', 'H'], [[5, 1, 'NT', 'N', 7]])]);
+  assert.equal(tie.byDeal.get('x:1').ns, 50);
+  // Day summary ranks by matchpoints, keeps points.
+  const rows = daySum(s, null, mp);
+  assert.equal(rows[0].label, 'Jon & Michelle');
+  assert.equal(rows[0].mpPct, 100);
+  assert.ok(rows.every((r) => typeof r.points === 'number'));
+  assert.equal(rows.find((r) => r.label === 'Craig & Kaye').mpPct, 0);
+});

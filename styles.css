@@ -678,3 +678,7 @@ ul.changes li { margin: .15rem 0; }
   transition: opacity 1.2s ease; display: grid; place-items: center; }
 #dimmer.on { opacity: .93; pointer-events: auto; }
 #dimmer span { color: #5d6b63; font-size: .95rem; letter-spacing: .05em; }
+
+/* Day summary / pair page matchpoints (11 Nov) */
+.rank .rv { white-space: nowrap; }
+table.mini td.mp { color: var(--green); font-weight: 700; padding-left: 10px; }

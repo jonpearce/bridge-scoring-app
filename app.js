@@ -9,7 +9,7 @@
 //  from the same scoring engine.
 // =============================================================
 import {
-  scoreDeal, sessionTotals, daySummary, vulnerabilityFor, vulForDeal, vulnerabilityText, dealerFor, boardNumberFor,
+  scoreDeal, sessionTotals, daySummary, matchpoints, vulnerabilityFor, vulForDeal, vulnerabilityText, dealerFor, boardNumberFor,
   contractText, outcomeText, strainSymbol, setStartFor, seatName, sideOf, sideName, pairKey, pairLabel,
   LEAD_RANKS, SUITS,
 } from './lib/chicago.js';
@@ -1476,7 +1476,7 @@ async function renderBoard(r) {
 // =============================================================
 async function renderDay() {
   const data = state.data;
-  const rows = daySummary(data.sessions, dayTotalsFn(data.sessions));
+  const rows = daySummary(data.sessions, dayTotalsFn(data.sessions), dayMatchpoints(data.sessions));
   const games = data.sessions.length;
   // This phone's own pair: the side it is sitting at, else the names it last played as.
   const m = mine(), t = m && sessionById(m.sessionId);
@@ -1484,17 +1484,23 @@ async function renderDay() {
   const myKey = my?.[0] && my?.[1] ? pairKey(my[0], my[1]) : null;
   $app.innerHTML = shell('day', `
     <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Day summary</h1>${sessionPicker()}</header>
-    <p class="muted">${games} table${games === 1 ? '' : 's'} in this session. Pairs are ranked by the total points they won.</p>
+    <p class="muted">${games} table${games === 1 ? '' : 's'} in this session. Pairs are ranked by <strong>matchpoints</strong>: on each board, your score is compared with every pair who held the same cards (same board, same direction) at other tables — 2 for each you beat, 1 for a tie. 50% is average. Boards played at only one table aren’t compared. Total points are shown too.</p>
     ${rows.length ? rows.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}" ${x.key === myKey ? 'aria-current="true"' : ''}>
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}${x.key === myKey ? ' <span class="you-pill">You</span>' : ''}</strong>
-          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
-          <span class="muted">Average ${x.avgPerBoard} a board</span></span>
-        <span class="rv">${x.points}</span></a>`).join('')
+          <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}${x.mpBoards !== x.boards ? ` · ${x.mpBoards} compared` : ''}</span>
+          <span class="muted"><strong>${x.points}</strong> points · average ${x.avgPerBoard} a board</span></span>
+        <span class="rv">${x.mpPct == null ? '—' : `${x.mpPct.toFixed(1)}%`}</span></a>`).join('')
       : '<div class="card"><p class="muted">No results yet in this session.</p></div>'}
     ${state.admin ? organiserPanel(data) : logoutButton()}`);
   wireSessionPicker(); wireLogout();
   if (state.admin) wireOrganiser(data);
+}
+
+// Matchpoints for the Day summary and pair pages: Chicago tables only (rubber
+// scores carry from board to board, so their boards can't be compared).
+function dayMatchpoints(sessions) {
+  return matchpoints(sessions, (s) => !isRubber(s));
 }
 
 // ---------- organiser (super-user) tools: only on phones logged in with the organiser code ----------
@@ -1776,7 +1782,8 @@ function wireOrganiser(data) {
 async function renderPair(r) {
   const data = state.data;
   const key = r.a;
-  const row = daySummary(data.sessions, dayTotalsFn(data.sessions)).find((x) => x.key === key);
+  const mp = dayMatchpoints(data.sessions);
+  const row = daySummary(data.sessions, dayTotalsFn(data.sessions), mp).find((x) => x.key === key);
   const items = [];
   for (const s of data.sessions) {
     const side = pairKey(s.nsP1, s.nsP2) === key ? 'NS' : pairKey(s.ewP1, s.ewP2) === key ? 'EW' : null;
@@ -1791,13 +1798,16 @@ async function renderPair(r) {
       <p class="muted">${t.played} of 4 boards · Won ${us} · Opponents ${them}${t.complete ? (us > them ? ' · <strong class="oc made">Won</strong>' : us < them ? ' · <strong class="oc down">Lost</strong>' : ' · All square') : ''}</p>
       <table class="mini"><tbody>${scored.map(({ d, sc }) => {
         const pts = side === 'NS' ? sc.nsPoints : sc.ewPoints;
-        return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${outcomeHtml(d, sc)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td></tr>`;
+        const bm = mp.byDeal.get(`${s.id}:${d.dealNo}`);
+        const pct = bm ? (side === 'NS' ? bm.ns : bm.ew) : null;
+        return `<tr><td>Bd ${d.boardNum}</td><td>${contractHtml(d)}${d.passedOut ? '' : ' ' + d.declarer}</td><td>${outcomeHtml(d, sc)}</td><td class="num ${pts ? 'pos' : 'muted'}">${pts}</td><td class="num mp" title="${bm ? `Compared with ${bm.tables - 1} other table${bm.tables === 2 ? '' : 's'}` : 'Only table to play this board'}">${pct == null ? '<span class="muted">—</span>' : `${Math.round(pct)}%`}</td></tr>`;
       }).join('')}${rub ? rub.extras.filter((x) => x.side === side).map((x) =>
         `<tr><td colspan="3">End of round: ${esc(x.why)}</td><td class="num pos">${x.points}</td></tr>`).join('') : ''}</tbody></table></section>`);
   }
   $app.innerHTML = shell('day', `
     <header class="top"><a href="#/day" class="back">‹ Day summary</a><h1>${esc(row?.label || 'Pair')}</h1>
-    ${row ? `<p class="muted">Rank ${row.rank} · ${row.points} points · ${row.boards} boards</p>` : ''}</header>
+    ${row ? `<p class="muted">Rank ${row.rank} · ${row.mpPct == null ? 'no boards compared' : `${row.mpPct.toFixed(1)}% matchpoints`} · ${row.points} points · ${row.boards} boards</p>
+      <p class="muted small">Each board shows the points won, then the matchpoint % against pairs who held the same cards at other tables (— = no other table played it).</p>` : ''}</header>
     ${items.join('') || '<p class="muted">No boards found.</p>'}`);
 }
 

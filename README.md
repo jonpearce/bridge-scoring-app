@@ -83,6 +83,14 @@ recalculated.
      two away from one that has (Marion / Marian), the phone asks which is right
      before setting up the table.
 
+   - **Other results:** every board your pair has played this session is gold
+     with a ✓ (not just the boards of the table you're at now).
+   - **Entry screen** shows the vulnerability in brackets: "Deal 1 of 4 ·
+     Dealer North (Neither vul)".
+   - **Dimming:** the app keeps the phone awake, and after 1 minute without a
+     touch it dims the screen to near-black ("Tap to wake"). The waking tap does
+     nothing else. Change the time with `DIM_AFTER_MS` in `app.js`.
+
 8. **Log out:** at the bottom of the Play, Other results and Day summary screens, tap **Log out** (for
    example to log back in with the organiser code).
 9. **Organiser (super-user):** log in with the organiser code instead of the

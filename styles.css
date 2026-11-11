@@ -254,7 +254,7 @@ table.results { width: 100%; border-collapse: collapse; font-size: .95rem; }
 }
 .bcell strong { font: 700 1.5rem var(--serif); color: var(--green); }
 .bcell span { font-size: .78rem; color: var(--muted); }
-.bcell.mine { border-color: var(--gold); background: #fffaf0; }
+.bcell.mine { border: 2px solid var(--gold); background: #fffaf0; padding: 11px 3px; }
 
 /* ---------- day summary ---------- */
 .rank { display: grid; grid-template-columns: 44px 1fr auto; gap: 12px; align-items: center; }
@@ -663,8 +663,18 @@ body.splash .login .card.error, body.splash .login .card.sleep { margin-top: 16p
 
 /* Other results: a small tick on boards this pair has played */
 .bcell { position: relative; }
-.bcell .played-tick { position: absolute; top: 4px; right: 7px; font-size: .8rem; font-weight: 700; color: #4f8f6a; line-height: 1; }
+.bcell .played-tick { position: absolute; top: 4px; right: 7px; font-size: 1rem; font-weight: 800; color: var(--pos, #1f7a45); line-height: 1; }
+.played-key { background: #fffaf0; border: 1px solid var(--gold); border-radius: 6px; padding: 0 5px; white-space: nowrap; }
 
 /* "Change the players at this table?" pop-up: old → new names (11 Nov) */
 ul.changes { margin: .25rem 0 .75rem; padding-left: 1.2rem; font-weight: 600; }
 ul.changes li { margin: .15rem 0; }
+
+/* Entry screen: "(N/S vul)" after Deal 1 of 4 · Dealer North (11 Nov) */
+.vulnote { font-weight: 700; color: var(--ink); white-space: nowrap; }
+
+/* Dimmed screen after a minute untouched (11 Nov). Tap to wake. */
+#dimmer { position: fixed; inset: 0; z-index: 9999; background: #000; opacity: 0; pointer-events: none;
+  transition: opacity 1.2s ease; display: grid; place-items: center; }
+#dimmer.on { opacity: .93; pointer-events: auto; }
+#dimmer span { color: #5d6b63; font-size: .95rem; letter-spacing: .05em; }

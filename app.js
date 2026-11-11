@@ -228,6 +228,10 @@ function vulChoiceButtons(current, attr = 'vulset') {
   return `<div class="seg four vulseg" role="radiogroup" aria-label="Who is vulnerable">${VUL_CHOICES.map(([k, l]) =>
     `<button type="button" role="radio" data-${attr}="${k}" aria-checked="${current === k}" class="${current === k ? 'on' : ''} ${k === 'none' ? 'nv' : 'isvul'}">${l}</button>`).join('')}</div>`;
 }
+// Short form for the entry screen line: "N/S vul", "E/W vul", "Both vul", "Neither vul".
+function vulShort(v) {
+  return v.ns && v.ew ? 'Both vul' : v.ns ? 'N/S vul' : v.ew ? 'E/W vul' : 'Neither vul';
+}
 function vulBadge(v) {
   return `<span class="vb ${v.ns ? 'on' : ''}">N/S ${v.ns ? 'Vul' : 'Not vul'}</span><span class="vb ${v.ew ? 'on' : ''}">E/W ${v.ew ? 'Vul' : 'Not vul'}</span>`;
 }
@@ -1009,7 +1013,7 @@ function renderEntry(r) {
   $app.innerHTML = shell('play', `
     <header class="entry-head">
       <div class="entry-toprow"><a href="#/s/${s.id}" class="back">‹ Back to the table</a>${prevLink}</div>
-      <div class="bline"><span class="bnum big">Board ${board}</span>${s.deals.length >= 4 && !state.admin ? '' : '<button class="btn small swap" id="changeBoards" type="button" aria-label="Change board numbers">Change</button>'}<span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))}</span></div>
+      <div class="bline"><span class="bnum big">Board ${board}</span>${s.deals.length >= 4 && !state.admin ? '' : '<button class="btn small swap" id="changeBoards" type="button" aria-label="Change board numbers">Change</button>'}<span class="muted">Deal ${n} of 4 · Dealer ${seatName(dealerFor(n, s.firstDealer))} <span class="vulnote">(${vulShort({ ns: state.entry.e.vulNs, ew: state.entry.e.vulEw })})</span></span></div>
     </header>
     <div id="entryNote">${existing ? '<p class="note">Already saved. Change anything and tap Save to correct it.</p>' : ''}</div>
     <div id="entry"></div>
@@ -1430,8 +1434,8 @@ async function renderOthers() {
   const list = [...boards.entries()].sort((a, b) => a[0] - b[0]);
   $app.innerHTML = shell('others', `
     <header class="top"><a href="${mine() ? `#/s/${mine().sessionId}` : '#/play'}" class="back">‹ ${mine() ? 'Back to the table' : 'Back'}</a><h1>Other results</h1>${sessionPicker()}</header>
-    <p class="muted">Tap a board to compare every table’s result for that board.</p>
-    ${list.length ? `<div class="boardgrid">${(() => { const played = playedBoards(); return list.map(([b, c]) => `<a class="bcell ${myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}" aria-label="Board ${b}, ${c} table${c > 1 ? 's' : ''}${played.has(b) ? ', you have played it' : ''}">${played.has(b) ? '<span class="played-tick" aria-hidden="true">✓</span>' : ''}<span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join(''); })()}</div>`
+    <p class="muted">Tap a board to compare every table’s result for that board.${playedBoards().size ? ' Boards your pair has played are <span class="played-key">gold with a ✓</span>.' : ''}</p>
+    ${list.length ? `<div class="boardgrid">${(() => { const played = playedBoards(); return list.map(([b, c]) => `<a class="bcell ${played.has(b) || myBoards.has(b) ? 'mine' : ''}" href="#/board/${b}" aria-label="Board ${b}, ${c} table${c > 1 ? 's' : ''}${played.has(b) ? ', you have played it' : ''}">${played.has(b) ? '<span class="played-tick" aria-hidden="true">✓</span>' : ''}<span class="blbl">Board</span><strong>${b}</strong><span>${c} table${c > 1 ? 's' : ''}</span></a>`).join(''); })()}</div>`
       : '<div class="card"><p class="muted">No boards recorded in this session yet.</p></div>'}
     ${logoutButton()}`);
   wireSessionPicker(); wireLogout();
@@ -1941,6 +1945,35 @@ if (!('wakeLock' in navigator)) logEvent('stay_awake_not_supported', { browser: 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) keepAwake(); });
 document.addEventListener('pointerdown', () => keepAwake(), { passive: true });
 keepAwake();
+
+// ---------- dim the screen when nobody is touching it (11 Nov) ----------
+// The phone is kept awake (above), so after DIM_AFTER_MS without a touch the app
+// covers the screen with near-black to save battery. A web page can't turn the
+// backlight down itself; black saves a lot on OLED screens (most recent phones),
+// less on older LCD ones. Tap anywhere to wake: that tap does nothing else.
+const DIM_AFTER_MS = 60 * 1000;
+const dimmer = document.createElement('div');
+dimmer.id = 'dimmer'; dimmer.setAttribute('aria-hidden', 'true');
+dimmer.innerHTML = '<span>Tap to wake</span>';
+document.body.appendChild(dimmer);
+let dimTimer = null;
+const dimNow = () => { if (!document.hidden) dimmer.classList.add('on'); };
+const undim = () => {
+  clearTimeout(dimTimer);
+  dimTimer = setTimeout(dimNow, DIM_AFTER_MS);
+};
+dimmer.addEventListener('pointerdown', (e) => {
+  e.preventDefault(); e.stopPropagation();
+  dimmer.classList.remove('on');
+  // Keep catching taps a moment longer so the waking tap doesn't press a button underneath.
+  dimmer.style.pointerEvents = 'auto';
+  setTimeout(() => { dimmer.style.pointerEvents = ''; }, 450);
+  undim();
+});
+dimmer.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); });
+for (const ev of ['pointerdown', 'keydown', 'touchmove', 'wheel']) document.addEventListener(ev, undim, { passive: true, capture: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { dimmer.classList.remove('on'); undim(); } });
+undim();
 
 // ---------- start ----------
 (async () => {

@@ -1488,7 +1488,13 @@ async function renderBoard(r) {
 // =============================================================
 async function renderDay() {
   const data = state.data;
-  const rows = daySummary(data.sessions, dayTotalsFn(data.sessions), dayMatchpoints(data.sessions));
+  // N/S and E/W are ranked separately (21 Nov): each pair's points and matchpoint % count only
+  // the tables where it sat that direction, and boards are only compared within a direction.
+  const mpAll = dayMatchpoints(data.sessions);
+  const totalsFn = dayTotalsFn(data.sessions);
+  const nsRows = daySummary(data.sessions, totalsFn, mpAll, 'NS');
+  const ewRows = daySummary(data.sessions, totalsFn, mpAll, 'EW');
+  const rows = nsRows.length + ewRows.length ? [1] : [];
   const games = data.sessions.length;
   // This phone's own pair: the side it is sitting at, else the names it last played as.
   const m = mine(), t = m && sessionById(m.sessionId);
@@ -1499,6 +1505,7 @@ async function renderDay() {
     <details class="input explain" id="rankHelp">
       <summary>How the ranking works</summary>
       <div class="explain-body">
+        <p>North / South pairs and East / West pairs are ranked <strong>separately</strong>, each with its own points and percentage. A pair that sat both ways appears in both lists, with only the tables it played in that direction.</p>
         <p>Pairs are ranked by <strong>matchpoints</strong>. On each board, your score is compared with every pair who held the same cards (same board, same direction) at the other tables: <strong>2</strong> for each one you beat, <strong>1</strong> for a tie.</p>
         <p>Each board becomes a percentage, and your figure is the average of them. <strong>50% is average.</strong></p>
         <p>A board played at only one table has nothing to compare with, so it isn’t counted (it still counts in your points).</p>
@@ -1512,13 +1519,16 @@ async function renderDay() {
         <span class="muted small">Boards ${g.startBoard}–${g.startBoard + 3} · ${g.deals.length} of 4 entered</span></li>`).join('')}</ul></div>
     </details>` : '<p class="muted">No tables in this session yet.</p>'}
     ${rows.length ? `<p class="list-hint">Pairs <span class="muted">(tap a pair to see its boards)</span></p>` : ''}
-    ${rows.length ? rows.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}" ${x.key === myKey ? 'aria-current="true"' : ''}>
+    ${rows.length ? [['NS', 'North / South', nsRows], ['EW', 'East / West', ewRows]].map(([side, title, list]) => `
+      <h2 class="dir-head ${side === 'NS' ? 'ns' : 'ew'}">${title}</h2>
+      ${list.length ? list.map((x) => `<a class="card rank ${x.key === myKey ? 'me' : ''}" href="#/pair/${encodeURIComponent(x.key)}/${side}" ${x.key === myKey ? 'aria-current="true"' : ''}>
         <span class="rk">${x.rank}</span>
         <span class="rn"><strong>${esc(x.label)}${x.key === myKey ? ' <span class="you-pill">You</span>' : ''}</strong>
           <span class="muted">${x.boards} board${x.boards === 1 ? '' : 's'} · ${x.games} table${x.games === 1 ? '' : 's'}${x.gamesWon ? `, ${x.gamesWon} won` : ''}</span>
           ${x.mpBoards !== x.boards ? `<span class="muted small">${x.boards - x.mpBoards} board${x.boards - x.mpBoards === 1 ? '' : 's'} not compared (no other table played ${x.boards - x.mpBoards === 1 ? 'it' : 'them'})</span>` : ''}
           <span class="muted"><strong>${x.points}</strong> points</span></span>
         <span class="rv">${x.mpPct == null ? '—' : `${x.mpPct.toFixed(1)}%`}<span class="chev" aria-hidden="true">›</span></span></a>`).join('')
+        : `<div class="card"><p class="muted">No ${title} results yet.</p></div>`}`).join('')
       : '<div class="card"><p class="muted">No results yet in this session.</p></div>'}
     ${state.admin ? organiserPanel(data) : logoutButton()}`);
   wireSessionPicker(); wireLogout();
@@ -1811,7 +1821,9 @@ async function renderPair(r) {
   const data = state.data;
   const key = r.a;
   const mp = dayMatchpoints(data.sessions);
-  const row = daySummary(data.sessions, dayTotalsFn(data.sessions), mp).find((x) => x.key === key);
+  // Opened from a Day summary list (#/pair/<key>/NS or /EW): the header shows that direction's rank, points and %.
+  const dir = r.b === 'NS' || r.b === 'EW' ? r.b : null;
+  const row = daySummary(data.sessions, dayTotalsFn(data.sessions), mp, dir).find((x) => x.key === key);
   const items = [];
   for (const s of data.sessions) {
     const side = pairKey(s.nsP1, s.nsP2) === key ? 'NS' : pairKey(s.ewP1, s.ewP2) === key ? 'EW' : null;
@@ -1834,7 +1846,7 @@ async function renderPair(r) {
   }
   $app.innerHTML = shell('day', `
     <header class="top"><a href="#/day" class="back">‹ Day summary</a><h1>${esc(row?.label || 'Pair')}</h1>
-    ${row ? `<p class="muted">Rank ${row.rank} · ${row.mpPct == null ? 'no boards compared' : `${row.mpPct.toFixed(1)}% matchpoints`} · ${row.points} points · ${row.boards} boards</p>
+    ${row ? `<p class="muted">${dir ? `${dir === 'NS' ? 'North / South' : 'East / West'} · ` : ''}Rank ${row.rank} ·${row.mpPct == null ? 'no boards compared' : `${row.mpPct.toFixed(1)}% matchpoints`} · ${row.points} points · ${row.boards} boards</p>
       <p class="muted small">Each board shows the points won, then the matchpoint % against pairs who held the same cards at other tables (— = no other table played it).</p>` : ''}</header>
     ${items.join('') || '<p class="muted">No boards found.</p>'}`);
 }

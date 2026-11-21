@@ -273,3 +273,23 @@ test('matchpoints: same board, same direction compared; single-table boards left
   assert.ok(rows.every((r) => typeof r.points === 'number'));
   assert.equal(rows.find((r) => r.label === 'Craig & Kaye').mpPct, 0);
 });
+
+// ---------- N/S and E/W ranked separately (21 Nov) ----------
+test('day summary by direction: own points and own matchpoint % per direction', () => {
+  const t = (id, ns, ew, deals) => ({ id, firstDealer: 'N', nsP1: ns[0], nsP2: ns[1], ewP1: ew[0], ewP2: ew[1],
+    deals: deals.map(([boardNum, level, strain, declarer, tricks], i) => ({ dealNo: i + 1, boardNum, level, strain, declarer, tricks, doubled: '', vulNs: false, vulEw: false })) });
+  // Jon & Michelle sit E/W at table a and N/S at table c, same board 1.
+  const s = [
+    t('a', ['Craig', 'Kaye'], ['Jon', 'Michelle'], [[1, 6, 'H', 'E', 13]]),
+    t('b', ['Jill', 'David'], ['Trish', 'Fiona'], [[1, 4, 'H', 'E', 11]]),
+    t('c', ['Jon', 'Michelle'], ['Richard', 'Janet'], [[1, 3, 'H', 'E', 11]]),
+  ];
+  const mp = mpCalc(s);
+  const ns = daySum(s, null, mp, 'NS'), ew = daySum(s, null, mp, 'EW');
+  assert.ok(ns.some((r) => r.label === 'Craig & Kaye'));
+  assert.ok(ew.every((r) => r.label !== 'Craig & Kaye'));
+  const jonNs = ns.find((r) => r.label === 'Jon & Michelle'), jonEw = ew.find((r) => r.label === 'Jon & Michelle');
+  assert.equal(jonNs.boards, 1); assert.equal(jonEw.boards, 1);   // one table each way, not two
+  assert.equal(jonEw.mpPct, 100);                                  // best E/W result on board 1
+  assert.equal(jonNs.points + jonEw.points, daySum(s, null, mp).find((r) => r.label === 'Jon & Michelle').points);
+});

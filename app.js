@@ -403,9 +403,8 @@ function renderNew(r) {
           <button type="button" role="radio" data-side="NS" class="ns ${mySide === 'NS' ? 'on' : ''}" aria-checked="${mySide === 'NS'}">North/South</button>
           <button type="button" role="radio" data-side="EW" class="ew ${mySide === 'EW' ? 'on' : ''}" aria-checked="${mySide === 'EW'}">East/West</button>
         </div>
-        <label class="lbl" id="usLbl">Your pair</label>
-        <div class="ac"><input name="us1" class="input" placeholder="Player 1" value="${esc(v.us1)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="usLbl"></div>
-        <div class="ac"><input name="us2" class="input" placeholder="Player 2" value="${esc(v.us2)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="usLbl"></div>
+        <div class="ac"><input name="us1" class="input" placeholder="Player 1" value="${esc(v.us1)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-label="Your pair, player 1"></div>
+        <div class="ac"><input name="us2" class="input" placeholder="Player 2" value="${esc(v.us2)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-label="Your pair, player 2"></div>
         <label class="lbl" id="themLbl">Opponents</label>
         <div class="ac"><input name="them1" class="input" placeholder="Player 1" value="${esc(v.them1)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="themLbl"></div>
         <div class="ac"><input name="them2" class="input" placeholder="Player 2" value="${esc(v.them2)}" required maxlength="40" autocomplete="off" autocapitalize="words" aria-labelledby="themLbl"></div>
@@ -417,7 +416,7 @@ function renderNew(r) {
           <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" min="1" max="999" maxlength="3" value="${v.startBoard}">
           <button type="button" class="step" data-step="1" aria-label="Higher">+</button></div>
         <p class="muted" id="boardsLine"></p>
-        ${dealerByBoard ? '<p class="muted small">Dealer and vulnerability are as printed on each board.</p>' : `<span class="lbl">Who deals first?</span>
+        ${dealerByBoard ? '' : `<span class="lbl">Who deals first?</span>
         <div class="seg four" role="radiogroup" aria-label="First dealer">${['N', 'E', 'S', 'W'].map((d) => `<button type="button" role="radio" data-dealer="${d}" aria-checked="${v.firstDealer === d}" class="${v.firstDealer === d ? 'on' : ''}" ${played ? 'disabled' : ''}>${seatName(d)}</button>`).join('')}</div>
         ${played ? '<p class="muted small">Who deals first is fixed once a result has been saved. Board numbers can still be changed; saved results move with them.</p>' : ''}`}
       </section>
@@ -437,7 +436,6 @@ function renderNew(r) {
   const update = () => {
     const raw = parseInt(sbInput.value, 10), n = raw > 0 ? firstOf(raw) : 0;
     document.getElementById('boardsLine').textContent = n > 0 ? `Boards ${n}, ${n + 1}, ${n + 2} and ${n + 3}` : '';
-    document.getElementById('usLbl').textContent = `Your pair (${sideName(side)})`;
     document.getElementById('themLbl').textContent = `Opponents (${sideName(side === 'NS' ? 'EW' : 'NS')})`;
   };
   update();

@@ -9,7 +9,7 @@
 //  from the same scoring engine.
 // =============================================================
 import {
-  scoreDeal, sessionTotals, daySummary, matchpoints, vulnerabilityFor, vulForDeal, vulnerabilityText, dealerFor, boardNumberFor,
+  scoreDeal, sessionTotals, daySummary, matchpoints, vulnerabilityFor, vulForDeal, vulnerabilityText, dealerFor, boardNumberFor, usesBoardVul,
   contractText, outcomeText, strainSymbol, setStartFor, seatName, sideOf, sideName, pairKey, pairLabel,
   LEAD_RANKS, SUITS,
 } from './lib/chicago.js';
@@ -384,6 +384,8 @@ function renderNew(r) {
   const removed = new Set((state.data.hiddenNames || []).map((n) => n.toLowerCase()));
   const nameList = uniqNames([...(prefs.names || []), ...(state.data.names || [])]).filter((n) => !removed.has(n.toLowerCase()));
   const played = editing && editing.deals.length > 0;
+  // Tables from 25 Nov (and new ones): dealer comes from the board number, so no choice.
+  const dealerByBoard = !editing || usesBoardVul(editing.createdAt);
   const v = editing
     ? { startBoard: editing.startBoard, firstDealer: editing.firstDealer,
         us1: mySide === 'NS' ? editing.nsP1 : editing.ewP1, us2: mySide === 'NS' ? editing.nsP2 : editing.ewP2,
@@ -415,9 +417,9 @@ function renderNew(r) {
           <input id="sb" name="startBoard" class="input center" inputmode="numeric" pattern="[0-9]*" min="1" max="999" maxlength="3" value="${v.startBoard}">
           <button type="button" class="step" data-step="1" aria-label="Higher">+</button></div>
         <p class="muted" id="boardsLine"></p>
-        <span class="lbl">Who deals first?</span>
+        ${dealerByBoard ? '<p class="muted small">Dealer and vulnerability are as printed on each board.</p>' : `<span class="lbl">Who deals first?</span>
         <div class="seg four" role="radiogroup" aria-label="First dealer">${['N', 'E', 'S', 'W'].map((d) => `<button type="button" role="radio" data-dealer="${d}" aria-checked="${v.firstDealer === d}" class="${v.firstDealer === d ? 'on' : ''}" ${played ? 'disabled' : ''}>${seatName(d)}</button>`).join('')}</div>
-        ${played ? '<p class="muted small">Who deals first is fixed once a result has been saved. Board numbers can still be changed; saved results move with them.</p>' : ''}
+        ${played ? '<p class="muted small">Who deals first is fixed once a result has been saved. Board numbers can still be changed; saved results move with them.</p>' : ''}`}
       </section>
       <p id="formErr" class="err" role="alert"></p>
       <button class="btn ${editing ? 'primary' : 'go'} big block" type="submit">${editing ? 'Save names' : 'Start playing'}</button>

@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   declarerScore, scoreDeal, vulnerabilityFor, dealerFor, sessionTotals, daySummary,
-  boardNumberFor, validateDeal, contractText, outcomeText, pairKey, leadText,
+  boardNumberFor, validateDeal, contractText, outcomeText, pairKey, leadText, setStartFor, firstDealerForBoard,
 } from '../lib/chicago.js';
 
 const NV = false, V = true;
@@ -130,6 +130,16 @@ test('from 25 Nov vulnerability follows the board number (as printed on the boar
   // Boards past 16 repeat; odd start boards (e.g. 2–5) still use each board's own
   assert.equal(key(vulnerabilityFor(1, 'E', after, 33)), '-');
   assert.equal(key(vulnerabilityFor(4, 'N', after, 2)), 'NS');   // Board 5
+});
+
+test('from 25 Nov the dealer is as printed on the board', () => {
+  // Board 1 North, 2 East, 3 South, 4 West, repeating (photos, 25 Nov 2026)
+  for (let b = 1; b <= 24; b++) {
+    const start = setStartFor(b);
+    assert.equal(dealerFor(b - start + 1, firstDealerForBoard(start)), 'NESW'[(b - 1) % 4], `Board ${b}`);
+  }
+  assert.equal(dealerFor(1, firstDealerForBoard(2)), 'E');   // odd set 2–5: Board 2 East
+  assert.equal(dealerFor(4, firstDealerForBoard(2)), 'N');   // Board 5 North
 });
 
 test('vulnerability is the same whoever deals first', () => {

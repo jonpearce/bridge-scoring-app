@@ -2,7 +2,7 @@ import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
   listEvents, resolveEvent, toEvent, authRole, getSettings, logEvent, toDeal,
 } from './_lib.js';
-import { SEATS, boardNumberFor, pairKey, setStartFor, vulnerabilityFor, usesBoardVul, scoreDeal } from '../lib/chicago.js';
+import { SEATS, boardNumberFor, pairKey, setStartFor, vulnerabilityFor, usesBoardVul, scoreDeal, firstDealerForBoard } from '../lib/chicago.js';
 
 const SELECT = 'id,event_id,location,start_board,first_dealer,scoring,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
@@ -48,6 +48,7 @@ export default handler({
     const b = await readJson(req);
     const row = sessionFields(b, true);
     row.start_board = setStartFor(row.start_board);   // sets of four: 1–4, 5–8 …
+    row.first_dealer = firstDealerForBoard(row.start_board);   // dealer as printed on the boards (25 Nov)
     await useKnownSpellings(row);
     const token = /^[0-9a-f-]{36}$/i.test(b.clientToken || '') ? b.clientToken : null;
     const ev = await resolveEvent(b.eventId);
@@ -104,6 +105,9 @@ export default handler({
     }
     if (b.startBoard != null && Number(b.startBoard) !== cur.start_board) b.startBoard = setStartFor(b.startBoard);
     const row = sessionFields({ ...toSession(cur), ...b }, true);
+    // Tables from 25 Nov: the dealer is as printed on the boards, so it follows the board numbers.
+    const dealerByBoard = usesBoardVul(cur.created_at);
+    if (dealerByBoard) row.first_dealer = firstDealerForBoard(row.start_board);
     await useKnownSpellings(row);
     const saved = (cur.chi_deals || []).length;
     const played = saved > 0;
@@ -133,7 +137,7 @@ export default handler({
       throw new HttpError(409, `${saved} board${saved === 1 ? ' is' : 's are'} already saved at this table. Changing the players moves ${saved === 1 ? 'that result' : 'those results'} to the new names.`,
         { confirmPairChange: true, changes: namesChanged.map((k) => `${cur[k]} → ${row[k]}`) });
     }
-    if (played && row.first_dealer !== cur.first_dealer) {
+    if (played && !dealerByBoard && row.first_dealer !== cur.first_dealer) {
       throw new HttpError(409, 'The first dealer can’t be changed once a board has been recorded.');
     }
     // New board numbers: move every saved board at this table with them.

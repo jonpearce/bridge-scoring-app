@@ -710,3 +710,7 @@ table.mini td:nth-child(2) { padding-right: 10px; }
 .dir-head { margin: 18px 2px 6px; font: 700 1.1rem var(--serif); }
 .dir-head.ns { color: var(--ns); }
 .dir-head.ew { color: var(--ew); }
+
+/* Set up a new round: no empty error space or extra margin, so Start playing fits (25 Nov) */
+#newForm #formErr:empty { display: none; }
+#newForm #boardsLine { margin: 0; }

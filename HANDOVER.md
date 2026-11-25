@@ -79,9 +79,19 @@ Each board is scored on its own, duplicate style, and only one pair scores per b
 
 **Vulnerability** (same at every table, whoever deals). Every saved board stores its own vulnerability, so changing the order never changes old scores.
 
+**From 25 Nov 2026 (current): vulnerability follows the board number**, as printed on the club's boards — the standard duplicate pattern, repeating every 16 boards (Board 17 = Board 1):
+
+| Board | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Vul | Neither | N/S | E/W | Both | N/S | E/W | Both | Neither | E/W | Both | Neither | N/S | Both | Neither | N/S | E/W |
+
+`BOARD_VUL` / `BOARD_VUL_FROM` in `lib/chicago.js`. Tables set up before then keep the per-deal order below for unplayed boards. If a table's board numbers are changed after a board is saved, that board takes the new board's vulnerability and is re-scored (unless its vulnerability had been changed by hand).
+
+Earlier per-deal orders:
+
 | In force | Deal 1 | Deal 2 | Deal 3 | Deal 4 |
 | --- | --- | --- | --- | --- |
-| From 4 Nov 2026, 2:05 pm (current) | Neither | N/S | E/W | Both |
+| 4 Nov 2026, 2:05 pm – 25 Nov | Neither | N/S | E/W | Both |
 | 21 Oct – 4 Nov | N/S | E/W | Both | Neither |
 | Before 21 Oct | Neither | Dealer's side | Dealer's side | Both |
 

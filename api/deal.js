@@ -32,7 +32,7 @@ export default handler({
     // the default, a correction keeps whatever the board already had.
     const rubber = sess.scoring === 'rubber';
     let table = null, othersAtTable = [];
-    const def = vulnerabilityFor(dealNo, sess.first_dealer, sess.created_at);
+    const def = vulnerabilityFor(dealNo, sess.first_dealer, sess.created_at, sess.start_board);
     const { vulLocked } = rubber ? {} : await getSettings();
     if (rubber) {
       // Rubber: vulnerability comes from the games already won at this table.

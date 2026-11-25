@@ -760,7 +760,7 @@ function dealsFor(s) {
     const d = s.deals.find((x) => x.dealNo === n);
     const draft = d || vulLocked() ? null : store.get(`draft:${s.id}:${n}`);
     const vul = d ? vulForDeal(d, s.firstDealer)
-      : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : vulnerabilityFor(n, s.firstDealer, s.createdAt));
+      : (draft && typeof draft.vulNs === 'boolean' ? { ns: draft.vulNs, ew: draft.vulEw } : vulnerabilityFor(n, s.firstDealer, s.createdAt, s.startBoard));
     return { n, board: boardNumberFor(n, s.startBoard), vul, dealer: dealerFor(n, s.firstDealer), d, scored: d ? scoreDeal(d, s.firstDealer) : null };
   });
 }
@@ -994,7 +994,7 @@ function renderEntry(r) {
   if (!s || ![1, 2, 3, 4].includes(n)) { $app.innerHTML = shell('play', errorBlock('This board could not be found.')); return; }
   const existing = s.deals.find((d) => d.dealNo === n);
   const draftKey = `draft:${s.id}:${n}`;
-  const def = vulnerabilityFor(n, s.firstDealer, s.createdAt);
+  const def = vulnerabilityFor(n, s.firstDealer, s.createdAt, s.startBoard);
   const saved = existing ? {
     passedOut: existing.passedOut, level: existing.level, strain: existing.strain, doubled: existing.doubled || '', declarer: existing.declarer,
     diff: existing.passedOut ? 0 : existing.tricks - (existing.level + 6), leadSuit: existing.leadSuit, leadRank: existing.leadRank,
@@ -1555,7 +1555,7 @@ function organiserPanel(data) {
         : 'New tables use Chicago scoring (each board on its own, set vulnerability).'} Tables already set up keep their own scoring.</span></span>
       <button class="btn small-btn ${scoringMode() === 'rubber' ? 'primary' : 'ghost'}" id="scoringBtn">${scoringMode() === 'rubber' ? 'Use Chicago' : 'Use Rubber'}</button></div>
     <div class="org-row vul-switch"><span><strong>Vulnerability ${vulLocked() ? 'locked 🔒' : 'unlocked'}</strong><br>
-      <span class="muted small">${vulLocked() ? 'Boards use Neither, N/S, E/W, Both. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
+      <span class="muted small">${vulLocked() ? 'Each board uses the vulnerability printed on it. Players can’t change it.' : 'Players can change the vulnerability on any board.'}</span></span>
       <button class="btn small-btn ${vulLocked() ? 'ghost' : 'primary'}" id="vulLockBtn">${vulLocked() ? 'Unlock' : 'Lock'}</button></div>
     <button class="btn ghost block" id="manageNames">Edit names…</button>
     <button class="btn ghost block" id="activityLog">Activity log…</button>

@@ -1,8 +1,8 @@
 import {
   handler, send, readJson, requireAuth, db, HttpError, todayLocal, toSession, cleanName,
-  listEvents, resolveEvent, toEvent, authRole, getSettings, logEvent,
+  listEvents, resolveEvent, toEvent, authRole, getSettings, logEvent, toDeal,
 } from './_lib.js';
-import { SEATS, boardNumberFor, pairKey, setStartFor } from '../lib/chicago.js';
+import { SEATS, boardNumberFor, pairKey, setStartFor, vulnerabilityFor, usesBoardVul, scoreDeal } from '../lib/chicago.js';
 
 const SELECT = 'id,event_id,location,start_board,first_dealer,scoring,ns_p1,ns_p2,ew_p1,ew_p2,created_at,updated_at,chi_deals(*)';
 
@@ -137,11 +137,22 @@ export default handler({
       throw new HttpError(409, 'The first dealer can’t be changed once a board has been recorded.');
     }
     // New board numbers: move every saved board at this table with them.
+    // Vulnerability follows the board number (tables from 25 Nov), so a saved
+    // board that had its old board's vulnerability takes the new board's and is
+    // re-scored. One whose vulnerability had been set by hand keeps it.
     if (row.start_board !== cur.start_board) {
+      const byBoard = cur.scoring !== 'rubber' && usesBoardVul(cur.created_at);
       for (const d of cur.chi_deals || []) {
-        await db(`chi_deals?session_id=eq.${cur.id}&deal_no=eq.${d.deal_no}`, {
-          method: 'PATCH', body: { board_num: boardNumberFor(d.deal_no, row.start_board) },
-        });
+        const body = { board_num: boardNumberFor(d.deal_no, row.start_board) };
+        if (byBoard) {
+          const was = vulnerabilityFor(d.deal_no, cur.first_dealer, cur.created_at, cur.start_board);
+          const now = vulnerabilityFor(d.deal_no, cur.first_dealer, cur.created_at, row.start_board);
+          if (d.vul_ns === was.ns && d.vul_ew === was.ew && (was.ns !== now.ns || was.ew !== now.ew)) {
+            const deal = { ...toDeal(d), vulNs: now.ns, vulEw: now.ew };
+            Object.assign(body, { vul_ns: now.ns, vul_ew: now.ew, ns_score: scoreDeal(deal, cur.first_dealer).nsScore });
+          }
+        }
+        await db(`chi_deals?session_id=eq.${cur.id}&deal_no=eq.${d.deal_no}`, { method: 'PATCH', body });
       }
     }
     const upd = await db(`chi_sessions?id=eq.${b.id}&select=${SELECT}`, { method: 'PATCH', body: row, prefer: 'return=representation' });

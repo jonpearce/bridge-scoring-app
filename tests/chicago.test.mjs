@@ -113,6 +113,25 @@ test('club vulnerability: N/S, E/W, both, neither', () => {
   assert.deepEqual(vulnerabilityFor(1, 'N', '2026-12-01T00:00:00Z'), { ns: false, ew: false });
 });
 
+test('from 25 Nov vulnerability follows the board number (as printed on the boards)', () => {
+  // Read off the club's boards 1–24 (photos, 25 Nov 2026). '-' neither, 'NS', 'EW', 'B' both.
+  const printed = ['-', 'NS', 'EW', 'B', 'NS', 'EW', 'B', '-', 'EW', 'B', '-', 'NS', 'B', '-', 'NS', 'EW',
+    '-', 'NS', 'EW', 'B', 'NS', 'EW', 'B', '-'];
+  const key = (v) => (v.ns && v.ew ? 'B' : v.ns ? 'NS' : v.ew ? 'EW' : '-');
+  const after = '2026-11-26T00:00:00Z';
+  for (let start = 1; start <= 21; start += 4) {
+    for (const n of [1, 2, 3, 4]) {
+      assert.equal(key(vulnerabilityFor(n, 'N', after, start)), printed[start + n - 2], `Board ${start + n - 1}`);
+    }
+  }
+  // Tables set up before the change keep the per-deal order
+  assert.deepEqual(vulnerabilityFor(1, 'N', '2026-11-20T00:00:00Z', 5), { ns: false, ew: false });
+  assert.deepEqual(vulnerabilityFor(2, 'N', '2026-11-20T00:00:00Z', 5), { ns: true, ew: false });
+  // Boards past 16 repeat; odd start boards (e.g. 2–5) still use each board's own
+  assert.equal(key(vulnerabilityFor(1, 'E', after, 33)), '-');
+  assert.equal(key(vulnerabilityFor(4, 'N', after, 2)), 'NS');   // Board 5
+});
+
 test('vulnerability is the same whoever deals first', () => {
   for (const d of ['E', 'S', 'W']) for (const n of [1, 2, 3, 4]) assert.deepEqual(vulnerabilityFor(n, d), vulnerabilityFor(n, 'N'));
   assert.equal(dealerFor(4, 'S'), 'E');
